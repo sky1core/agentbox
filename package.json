@@ -1,0 +1,40 @@
+{
+  "name": "@sky1core/agentbox",
+  "version": "1.0.0",
+  "description": "Docker Sandbox launcher for AI coding agents",
+  "type": "module",
+  "bin": {
+    "agentbox": "dist/index.js"
+  },
+  "scripts": {
+    "prebuild": "rm -rf dist",
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "docker",
+    "sandbox",
+    "ai",
+    "codex",
+    "claude",
+    "gemini"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
