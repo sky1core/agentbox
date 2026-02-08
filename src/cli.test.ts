@@ -14,6 +14,14 @@ function makeRunModeConfig(
   return {
     workspace: "/tmp/workspace",
     syncFiles: [],
+    networkProxy: {
+      allowHosts: [],
+      blockHosts: [],
+      allowCidrs: [],
+      blockCidrs: [],
+      bypassHosts: [],
+      bypassCidrs: [],
+    },
     startupWaitSec: 5,
     env: {},
     bootstrap: { onCreateScripts: [], onStartScripts: [] },
@@ -120,4 +128,3 @@ describe("dispatch run-mode passthrough", () => {
     ]);
   });
 });
-

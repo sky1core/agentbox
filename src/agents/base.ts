@@ -18,6 +18,9 @@ export async function ensureRunning(config: ResolvedConfig): Promise<void> {
     log(`'${sandboxName}' not found. Creating...`);
     docker.create(sandboxName, config.agent.name, config.workspace);
     await sleep(config.startupWaitSec);
+    if (docker.configureNetworkProxy(sandboxName, config.networkProxy) !== 0) {
+      log("WARNING: failed to apply sandbox network proxy options");
+    }
     ensureHostDockerInternal(sandboxName, config.workspace);
     if (config.agent.name === "codex") ensureCodexConfig(sandboxName);
     injectGhToken(sandboxName);
@@ -39,6 +42,9 @@ export async function ensureRunning(config: ResolvedConfig): Promise<void> {
       await sleep(config.startupWaitSec);
     }
 
+    if (docker.configureNetworkProxy(sandboxName, config.networkProxy) !== 0) {
+      log("WARNING: failed to apply sandbox network proxy options");
+    }
     ensureHostDockerInternal(sandboxName, config.workspace);
     if (config.agent.name === "codex") ensureCodexConfig(sandboxName);
     injectGhToken(sandboxName);

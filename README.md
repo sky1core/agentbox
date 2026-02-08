@@ -1,6 +1,15 @@
 # @sky1core/agentbox
 
-Docker Sandbox 런처. AI 코딩 에이전트(Codex, Claude, Kiro, Gemini, Copilot, Cagent)를 격리된 microVM에서 실행한다.
+Docker Sandbox 통합 런처. AI 코딩 에이전트(Codex, Claude, Kiro, Gemini, Copilot, Cagent)를 격리된 microVM에서 실행한다.
+
+## 주요 기능
+
+- **통합 CLI**: `agentbox codex`, `agentbox claude` 한 줄로 sandbox 생성부터 에이전트 실행까지
+- **자격증명 자동 주입**: Codex, Claude, Kiro, Gemini, GitHub 인증을 호스트에서 sandbox로 자동 복사
+- **승인 없이 자율 동작**: 격리된 microVM이므로 에이전트에게 무제한 권한 부여 가능
+- **readonly-remote**: sandbox에서 git push, PR merge 등 원격 쓰기를 기본 차단 (프로젝트별 해제 가능)
+- **bootstrap 스크립트**: sandbox 생성/시작 시 MCP 서버 빌드, 패키지 설치 등 자동 실행
+- **Docker-in-Docker**: 일반 Docker 컨테이너와 달리 microVM 내부에서 컨테이너 실행 가능 (Testcontainers 등)
 
 ## 요구사항
 
@@ -96,6 +105,13 @@ sync:
     - ~/.netrc
   remoteWrite: true            # 이 프로젝트에서는 push 허용
 
+network:
+  allowHosts:
+    - host.docker.internal
+    - 192.168.0.110
+  allowCidrs:
+    - 192.168.0.0/16
+
 startupWaitSec: 3
 
 env:                            # 로컬 env는 글로벌을 키 단위로 오버라이드
@@ -123,6 +139,7 @@ agents:
 | `env` | sandbox에 주입할 환경변수. 글로벌/로컬 모두 지원, 키 단위 머지 | `{}` |
 | `sync.files` | 호스트→sandbox 동기화할 파일 목록. 로컬이 글로벌을 완전히 대체 | `[]` |
 | `sync.remoteWrite` | `true`면 git push/merge 허용. `false`면 차단 (readonly-remote) | `false` |
+| `network.*` | `docker sandbox network proxy` 옵션 (`policy`, `allowHosts`, `blockHosts`, `allowCidrs`, `blockCidrs`, `bypassHosts`, `bypassCidrs`) | 비활성 |
 | `startupWaitSec` | sandbox 시작 대기 시간(초) | `5` |
 | `bootstrap.onCreateScript` | sandbox 최초 생성 시 1회 실행할 스크립트 | - |
 | `bootstrap.onStartScript` | sandbox 시작 시마다 실행할 스크립트 | - |
@@ -191,6 +208,22 @@ env:
 ```
 
 토큰은 `claude setup-token` 명령으로 발급받을 수 있다.
+
+### Sandbox 네트워크 허용/차단
+
+`network` 설정을 쓰면 `docker sandbox network proxy <sandbox>`에 옵션을 자동 적용한다.
+
+```yaml
+network:
+  policy: deny
+  allowHosts:
+    - host.docker.internal
+    - github.com
+  allowCidrs:
+    - 192.168.0.0/16
+```
+
+> 참고: sandbox 안의 `localhost`는 sandbox 자신이다. 호스트 접근은 보통 `host.docker.internal` 또는 호스트 IP를 허용해야 한다.
 
 ### Bootstrap 스크립트
 

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { execCapture, execInherit, execWithStdin, type ExecResult } from "../utils/process.js";
 import { parseSandboxState, type SandboxState } from "./parser.js";
+import type { NetworkPolicy } from "../config/schema.js";
 
 export function getState(sandboxName: string): SandboxState {
   const result = execCapture("docker", ["sandbox", "ls"]);
@@ -44,6 +45,48 @@ export function runBackground(sandboxName: string): void {
     detached: true,
   });
   child.unref();
+}
+
+export interface NetworkProxyOptions {
+  policy?: NetworkPolicy;
+  allowHosts?: string[];
+  blockHosts?: string[];
+  allowCidrs?: string[];
+  blockCidrs?: string[];
+  bypassHosts?: string[];
+  bypassCidrs?: string[];
+}
+
+function appendFlags(args: string[], flag: string, values: string[] = []): void {
+  for (const value of values) {
+    const v = value.trim();
+    if (!v) continue;
+    args.push(flag, v);
+  }
+}
+
+export function buildNetworkProxyArgs(
+  sandboxName: string,
+  options: NetworkProxyOptions,
+): string[] {
+  const args = ["sandbox", "network", "proxy", sandboxName];
+  if (options.policy) args.push("--policy", options.policy);
+  appendFlags(args, "--allow-host", options.allowHosts);
+  appendFlags(args, "--block-host", options.blockHosts);
+  appendFlags(args, "--allow-cidr", options.allowCidrs);
+  appendFlags(args, "--block-cidr", options.blockCidrs);
+  appendFlags(args, "--bypass-host", options.bypassHosts);
+  appendFlags(args, "--bypass-cidr", options.bypassCidrs);
+  return args;
+}
+
+export function configureNetworkProxy(
+  sandboxName: string,
+  options: NetworkProxyOptions,
+): number {
+  const args = buildNetworkProxyArgs(sandboxName, options);
+  if (args.length === 4) return 0; // no flags to apply
+  return execInherit("docker", args);
 }
 
 function envFlags(env?: Record<string, string>): string[] {

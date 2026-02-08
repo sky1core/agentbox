@@ -66,6 +66,9 @@ export function resolveConfig(
     return Array.isArray(v) ? v : [v];
   };
 
+  const normalizeList = (v?: string[]): string[] =>
+    (v ?? []).map((s) => s.trim()).filter(Boolean);
+
   const agentDefaults = getAgentDefaults(agent);
   const globalAgent = global.agents?.[agent];
   const localAgent = local.agents?.[agent];
@@ -79,6 +82,16 @@ export function resolveConfig(
     global.sync?.remoteWrite ??
     DEFAULT_GLOBAL_CONFIG.sync.remoteWrite ??
     false;
+
+  const networkProxy = {
+    policy: local.network?.policy ?? global.network?.policy,
+    allowHosts: normalizeList(local.network?.allowHosts ?? global.network?.allowHosts),
+    blockHosts: normalizeList(local.network?.blockHosts ?? global.network?.blockHosts),
+    allowCidrs: normalizeList(local.network?.allowCidrs ?? global.network?.allowCidrs),
+    blockCidrs: normalizeList(local.network?.blockCidrs ?? global.network?.blockCidrs),
+    bypassHosts: normalizeList(local.network?.bypassHosts ?? global.network?.bypassHosts),
+    bypassCidrs: normalizeList(local.network?.bypassCidrs ?? global.network?.bypassCidrs),
+  };
 
   const startupWaitSec: number =
     local.startupWaitSec ??
@@ -135,6 +148,7 @@ export function resolveConfig(
     workspace,
     syncFiles,
     remoteWrite,
+    networkProxy,
     startupWaitSec,
     env,
     bootstrap: { onCreateScripts, onStartScripts },

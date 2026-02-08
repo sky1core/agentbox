@@ -1,6 +1,17 @@
 export type AgentName = "codex" | "claude" | "kiro" | "gemini" | "copilot" | "cagent";
 
 export type ExecMode = "run" | "exec";
+export type NetworkPolicy = "allow" | "deny";
+
+export interface NetworkProxyConfig {
+  policy?: NetworkPolicy;
+  allowHosts?: string[];
+  blockHosts?: string[];
+  allowCidrs?: string[];
+  blockCidrs?: string[];
+  bypassHosts?: string[];
+  bypassCidrs?: string[];
+}
 
 export interface AgentGlobalConfig {
   execMode: ExecMode;
@@ -48,6 +59,7 @@ export interface GlobalConfig {
     files?: string[];
     remoteWrite?: boolean;
   };
+  network?: NetworkProxyConfig;
   defaults?: {
     startupWaitSec?: number;
   };
@@ -71,6 +83,7 @@ export interface LocalConfig {
     files?: string[];
     remoteWrite?: boolean;
   };
+  network?: NetworkProxyConfig;
   startupWaitSec?: number;
   env?: Record<string, string>;
   bootstrap?: BootstrapConfig;
@@ -81,6 +94,15 @@ export interface ResolvedConfig {
   workspace: string;
   syncFiles: string[];
   remoteWrite?: boolean;
+  networkProxy: {
+    policy?: NetworkPolicy;
+    allowHosts: string[];
+    blockHosts: string[];
+    allowCidrs: string[];
+    blockCidrs: string[];
+    bypassHosts: string[];
+    bypassCidrs: string[];
+  };
   startupWaitSec: number;
   env: Record<string, string>;
   bootstrap: {

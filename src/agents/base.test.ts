@@ -6,6 +6,14 @@ describe("ResolvedConfig.agent.name", () => {
     const config: ResolvedConfig = {
       workspace: "/tmp/test",
       syncFiles: [],
+      networkProxy: {
+        allowHosts: [],
+        blockHosts: [],
+        allowCidrs: [],
+        blockCidrs: [],
+        bypassHosts: [],
+        bypassCidrs: [],
+      },
       startupWaitSec: 5,
       env: {},
       bootstrap: { onCreateScripts: [], onStartScripts: [] },
@@ -24,6 +32,14 @@ describe("ResolvedConfig.agent.name", () => {
     const config: ResolvedConfig = {
       workspace: "/tmp/test",
       syncFiles: [],
+      networkProxy: {
+        allowHosts: [],
+        blockHosts: [],
+        allowCidrs: [],
+        blockCidrs: [],
+        bypassHosts: [],
+        bypassCidrs: [],
+      },
       startupWaitSec: 5,
       env: {},
       bootstrap: { onCreateScripts: [], onStartScripts: [] },

@@ -77,6 +77,54 @@ describe("resolveConfig", () => {
     expect(config.remoteWrite).toBe(false);
   });
 
+  it("network proxy defaults to empty lists", () => {
+    const config = resolveConfig("codex", minimalLocal, {});
+    expect(config.networkProxy).toEqual({
+      policy: undefined,
+      allowHosts: [],
+      blockHosts: [],
+      allowCidrs: [],
+      blockCidrs: [],
+      bypassHosts: [],
+      bypassCidrs: [],
+    });
+  });
+
+  it("uses global network proxy config", () => {
+    const global: GlobalConfig = {
+      network: {
+        policy: "deny",
+        allowHosts: ["host.docker.internal", "localhost"],
+        allowCidrs: ["10.0.0.0/8"],
+      },
+    };
+    const config = resolveConfig("codex", minimalLocal, global);
+    expect(config.networkProxy.policy).toBe("deny");
+    expect(config.networkProxy.allowHosts).toEqual(["host.docker.internal", "localhost"]);
+    expect(config.networkProxy.allowCidrs).toEqual(["10.0.0.0/8"]);
+  });
+
+  it("local network proxy overrides global per field", () => {
+    const global: GlobalConfig = {
+      network: {
+        policy: "deny",
+        allowHosts: ["host.docker.internal"],
+        allowCidrs: ["10.0.0.0/8"],
+      },
+    };
+    const local: LocalConfig = {
+      workspace: "/home/user/work/my-project",
+      network: {
+        policy: "allow",
+        allowHosts: ["localhost"],
+      },
+    };
+    const config = resolveConfig("codex", local, global);
+    expect(config.networkProxy.policy).toBe("allow");
+    expect(config.networkProxy.allowHosts).toEqual(["localhost"]);
+    expect(config.networkProxy.allowCidrs).toEqual(["10.0.0.0/8"]);
+  });
+
   it("global config can set remoteWrite to true", () => {
     const global: GlobalConfig = {
       sync: { remoteWrite: true },
