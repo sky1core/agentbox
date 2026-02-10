@@ -239,7 +239,8 @@ export function injectEnvVars(
         .replace(/\\/g, "\\\\")
         .replace(/"/g, '\\"')
         .replace(/\$/g, "\\$")
-        .replace(/`/g, "\\`");
+        .replace(/`/g, "\\`")
+        .replace(/'/g, "'\\''");
       return `'export ${k}="${escaped}"'`;
     })
     .join(" ");
