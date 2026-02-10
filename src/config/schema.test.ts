@@ -24,12 +24,12 @@ describe("isValidAgent", () => {
     expect(isValidAgent("gemini")).toBe(true);
   });
 
-  it("accepts 'copilot'", () => {
-    expect(isValidAgent("copilot")).toBe(true);
+  it("rejects 'copilot' (removed)", () => {
+    expect(isValidAgent("copilot")).toBe(false);
   });
 
-  it("accepts 'cagent'", () => {
-    expect(isValidAgent("cagent")).toBe(true);
+  it("rejects 'cagent' (removed)", () => {
+    expect(isValidAgent("cagent")).toBe(false);
   });
 
   it("rejects 'unknown'", () => {

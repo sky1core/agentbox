@@ -1,65 +1,45 @@
-export type AgentName = "codex" | "claude" | "kiro" | "gemini" | "copilot" | "cagent";
-
-export type ExecMode = "run" | "exec";
-export type NetworkPolicy = "allow" | "deny";
-
-export interface NetworkProxyConfig {
-  policy?: NetworkPolicy;
-  allowHosts?: string[];
-  blockHosts?: string[];
-  allowCidrs?: string[];
-  blockCidrs?: string[];
-  bypassHosts?: string[];
-  bypassCidrs?: string[];
-}
+export type AgentName = "codex" | "claude" | "kiro" | "gemini";
 
 export interface AgentGlobalConfig {
-  execMode: ExecMode;
   binary?: string;
   defaultArgs?: string[];
   /**
    * Default model name to use for the agent (injected as CLI flags automatically).
-   *
-   * NOTE: This is intentionally a plain string. Each agent may interpret model
-   * names differently (aliases vs full IDs). agentbox maps this to the correct
-   * per-agent CLI flag where supported.
    */
   model?: string;
-  credentials?: AgentCredentialsConfig;
 }
 
 /**
- * Agent credential injection behavior.
+ * Bootstrap scripts that run inside the VM before launching the agent CLI.
  *
- * - enabled: whether agentbox should try to auto-inject credentials for this agent.
- * - files: optional host-side files to copy into the sandbox (codex uses this by default).
- */
-export interface AgentCredentialsConfig {
-  enabled?: boolean;
-  files?: string[];
-}
-
-/**
- * Bootstrap scripts that run inside the sandbox before launching the agent CLI.
- *
- * - onCreateScript: runs only when the sandbox is created (state == "not found")
- * - onStartScript: runs whenever agentbox ensures the sandbox is running (including first create)
- *
- * Scripts can be specified as a single string or an array of strings.
- *
- * NOTE: Script path semantics are implemented in sync/bootstrap.ts.
+ * - onCreateScript: runs only when the VM is first created
+ * - onStartScript: runs whenever agentbox ensures the VM is running (including first create)
  */
 export interface BootstrapConfig {
   onCreateScript?: string | string[];
   onStartScript?: string | string[];
 }
 
+/** Lima VM resource configuration. */
+export interface VmConfig {
+  cpus?: number;
+  memory?: string;  // e.g. "8GiB"
+  disk?: string;    // e.g. "50GiB"
+}
+
+/** Additional mount point (beyond workspace and credential auto-mounts). */
+export interface MountConfig {
+  location: string;
+  mountPoint?: string;
+  writable?: boolean;
+}
+
 export interface GlobalConfig {
   sync?: {
-    files?: string[];
     remoteWrite?: boolean;
   };
-  network?: NetworkProxyConfig;
+  vm?: VmConfig;
+  mounts?: MountConfig[];
   defaults?: {
     startupWaitSec?: number;
   };
@@ -69,21 +49,17 @@ export interface GlobalConfig {
 }
 
 export interface AgentLocalConfig {
-  sandboxName?: string;
-  /**
-   * Per-project override for the default model (merged as: global -> local).
-   */
+  vmName?: string;
   model?: string;
-  credentials?: AgentCredentialsConfig;
 }
 
 export interface LocalConfig {
   workspace?: string;
   sync?: {
-    files?: string[];
     remoteWrite?: boolean;
   };
-  network?: NetworkProxyConfig;
+  vm?: VmConfig;
+  mounts?: MountConfig[];
   startupWaitSec?: number;
   env?: Record<string, string>;
   bootstrap?: BootstrapConfig;
@@ -92,17 +68,9 @@ export interface LocalConfig {
 
 export interface ResolvedConfig {
   workspace: string;
-  syncFiles: string[];
-  remoteWrite?: boolean;
-  networkProxy: {
-    policy?: NetworkPolicy;
-    allowHosts: string[];
-    blockHosts: string[];
-    allowCidrs: string[];
-    blockCidrs: string[];
-    bypassHosts: string[];
-    bypassCidrs: string[];
-  };
+  remoteWrite: boolean;
+  vm: Required<VmConfig>;
+  mounts: MountConfig[];
   startupWaitSec: number;
   env: Record<string, string>;
   bootstrap: {
@@ -111,19 +79,14 @@ export interface ResolvedConfig {
   };
   agent: {
     name: AgentName;
-    execMode: ExecMode;
     binary?: string;
     defaultArgs: string[];
     model?: string;
-    sandboxName: string;
-    credentials: {
-      enabled: boolean;
-      files: string[];
-    };
+    vmName: string;
   };
 }
 
-export const VALID_AGENTS: AgentName[] = ["codex", "claude", "kiro", "gemini", "copilot", "cagent"];
+export const VALID_AGENTS: AgentName[] = ["codex", "claude", "kiro", "gemini"];
 
 export function isValidAgent(name: string): name is AgentName {
   return VALID_AGENTS.includes(name as AgentName);

@@ -1,38 +1,31 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ResolvedConfig } from "./config/schema.js";
 import { dispatch, withDefaultModel } from "./cli.js";
-import * as docker from "./docker/sandbox.js";
+import * as lima from "./runtime/lima.js";
 import * as base from "./agents/base.js";
 
-function makeRunModeConfig(
+function makeConfig(
   agentName: ResolvedConfig["agent"]["name"],
   options?: {
     defaultArgs?: string[];
     model?: string;
+    binary?: string;
   },
 ): ResolvedConfig {
   return {
     workspace: "/tmp/workspace",
-    syncFiles: [],
-    networkProxy: {
-      allowHosts: [],
-      blockHosts: [],
-      allowCidrs: [],
-      blockCidrs: [],
-      bypassHosts: [],
-      bypassCidrs: [],
-    },
+    remoteWrite: false,
+    vm: { cpus: 4, memory: "8GiB", disk: "50GiB" },
+    mounts: [],
     startupWaitSec: 5,
     env: {},
     bootstrap: { onCreateScripts: [], onStartScripts: [] },
     agent: {
       name: agentName,
-      execMode: "run",
-      binary: agentName,
+      binary: options?.binary ?? agentName,
       defaultArgs: options?.defaultArgs ?? [],
       model: options?.model,
-      sandboxName: `${agentName}-test`,
-      credentials: { enabled: true, files: [] },
+      vmName: "agentbox-test",
     },
   };
 }
@@ -86,45 +79,82 @@ describe("withDefaultModel", () => {
   });
 });
 
-describe("dispatch run-mode passthrough", () => {
+describe("dispatch passthrough", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("does not prepend defaultArgs in run-mode passthrough", async () => {
-    const config = makeRunModeConfig("kiro", {
-      defaultArgs: ["chat", "--trust-all-tools"],
+  it("uses lima.shellInteractive for interactive passthrough", async () => {
+    const config = makeConfig("codex", {
+      defaultArgs: ["--approval-mode", "full-auto"],
     });
 
     vi.spyOn(base, "ensureRunning").mockResolvedValue(undefined);
-    const runSpy = vi.spyOn(docker, "run").mockReturnValue(0);
+    const shellSpy = vi.spyOn(lima, "shellInteractive").mockReturnValue(0);
+    vi.spyOn(lima, "shellNonInteractive").mockReturnValue(0);
     mockProcessExit();
 
-    await expect(dispatch("kiro", "--help", [], config)).rejects.toThrow("process.exit:0");
+    // Simulate TTY
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
 
-    expect(runSpy).toHaveBeenCalledWith("kiro-test", ["--", "--help"]);
+    await expect(dispatch("codex", "--help", [], config)).rejects.toThrow("process.exit:0");
+
+    expect(shellSpy).toHaveBeenCalledWith(
+      "agentbox-test",
+      "/tmp/workspace",
+      ["codex", "--approval-mode", "full-auto", "--help"],
+      {},
+    );
   });
 
-  it("injects model in run-mode passthrough without adding defaultArgs", async () => {
-    const config = makeRunModeConfig("claude", {
+  it("includes defaultArgs in passthrough", async () => {
+    const config = makeConfig("claude", {
       defaultArgs: ["--dangerously-skip-permissions"],
       model: "claude-3-7-sonnet",
     });
 
     vi.spyOn(base, "ensureRunning").mockResolvedValue(undefined);
-    const runSpy = vi.spyOn(docker, "run").mockReturnValue(0);
+    const shellSpy = vi.spyOn(lima, "shellInteractive").mockReturnValue(0);
+    vi.spyOn(lima, "shellNonInteractive").mockReturnValue(0);
     mockProcessExit();
+
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
 
     await expect(dispatch("claude", "prompt", ["hello"], config)).rejects.toThrow(
       "process.exit:0",
     );
 
-    expect(runSpy).toHaveBeenCalledWith("claude-test", [
-      "--",
-      "--model",
-      "claude-3-7-sonnet",
-      "prompt",
-      "hello",
-    ]);
+    expect(shellSpy).toHaveBeenCalledWith(
+      "agentbox-test",
+      "/tmp/workspace",
+      ["claude", "--model", "claude-3-7-sonnet", "--dangerously-skip-permissions", "prompt", "hello"],
+      {},
+    );
+  });
+
+  it("uses binary from config", async () => {
+    const config = makeConfig("kiro", {
+      binary: "kiro-cli",
+      defaultArgs: ["chat", "--trust-all-tools"],
+    });
+
+    vi.spyOn(base, "ensureRunning").mockResolvedValue(undefined);
+    const shellSpy = vi.spyOn(lima, "shellInteractive").mockReturnValue(0);
+    vi.spyOn(lima, "shellNonInteractive").mockReturnValue(0);
+    mockProcessExit();
+
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+
+    await expect(dispatch("kiro", undefined, [], config)).rejects.toThrow("process.exit:0");
+
+    expect(shellSpy).toHaveBeenCalledWith(
+      "agentbox-test",
+      "/tmp/workspace",
+      ["kiro-cli", "chat", "--trust-all-tools"],
+      {},
+    );
   });
 });

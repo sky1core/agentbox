@@ -1,19 +1,19 @@
 # @sky1core/agentbox
 
-Docker Sandbox 통합 런처. AI 코딩 에이전트(Codex, Claude, Kiro, Gemini, Copilot, Cagent)를 격리된 microVM에서 실행한다.
+AI 코딩 에이전트(Codex, Claude, Kiro, Gemini)를 격리된 Lima VM에서 실행하는 통합 런처.
 
 ## 주요 기능
 
-- **통합 CLI**: `agentbox codex`, `agentbox claude` 한 줄로 sandbox 생성부터 에이전트 실행까지
-- **자격증명 자동 주입**: Codex, Claude, Kiro, Gemini, GitHub 인증을 호스트에서 sandbox로 자동 복사
-- **승인 없이 자율 동작**: 격리된 microVM이므로 에이전트에게 무제한 권한 부여 가능
-- **readonly-remote**: sandbox에서 git push, PR merge 등 원격 쓰기를 기본 차단 (프로젝트별 해제 가능)
-- **bootstrap 스크립트**: sandbox 생성/시작 시 MCP 서버 빌드, 패키지 설치 등 자동 실행
-- **Docker-in-Docker**: 일반 Docker 컨테이너와 달리 microVM 내부에서 컨테이너 실행 가능 (Testcontainers 등)
+- **통합 CLI**: `agentbox codex`, `agentbox claude` 한 줄로 VM 생성부터 에이전트 실행까지
+- **최소 권한 크리덴셜 주입**: 에이전트에 필요한 인증 파일만 개별 복사 (`~/.ssh` 등 민감 파일 노출 없음)
+- **승인 없이 자율 동작**: 격리된 VM이므로 에이전트에게 무제한 권한 부여 가능
+- **readonly-remote**: VM에서 git push, PR merge 등 원격 쓰기를 기본 차단 (프로젝트별 해제 가능)
+- **bootstrap 스크립트**: VM 생성/시작 시 MCP 서버 빌드, 패키지 설치 등 자동 실행
+- **Docker-in-Docker**: Lima VM 내부에서 Docker 컨테이너 네이티브 실행 가능 (Testcontainers 등)
 
 ## 요구사항
 
-- **Docker Desktop 4.50+** (docker sandbox 기능 필요)
+- **Lima** (`brew install lima`)
 - Node.js 18+
 
 ## 설치
@@ -49,17 +49,15 @@ agentbox claude                 # 인터랙티브
 agentbox claude continue        # 이전 대화 이어가기
 agentbox claude prompt "프롬프트"  # 1회 실행
 
-# Kiro / Gemini / Copilot / Cagent
+# Kiro / Gemini
 agentbox kiro
 agentbox gemini
-agentbox copilot
-agentbox cagent
 
-# 공통
-agentbox ls                     # 전체 sandbox 목록
-agentbox codex shell            # bash 쉘
-agentbox codex ls               # sandbox 목록
-agentbox codex stop             # 정지
+# VM 관리 (에이전트 지정 불필요 — VM은 워크스페이스당 하나)
+agentbox ls                     # 전체 VM 목록
+agentbox shell                  # bash 쉘
+agentbox stop                   # 정지
+agentbox rm                     # VM 삭제
 ```
 
 ## 설정
@@ -70,9 +68,12 @@ agentbox codex stop             # 정지
 
 ```yaml
 sync:
-  files:
-    - ~/.netrc
-    - ~/.gitconfig
+  remoteWrite: false          # git push 차단 (기본)
+
+vm:
+  cpus: 4
+  memory: "8GiB"
+  disk: "20GiB"
 
 defaults:
   startupWaitSec: 5
@@ -82,14 +83,11 @@ env:
 
 agents:
   codex:
-    execMode: exec     # exec(독립 바이너리) vs run(엔트리포인트)
     binary: codex
-    model: o3          # 기본 모델 지정
+    model: o3
   claude:
-    execMode: run
     model: sonnet
   gemini:
-    execMode: exec
     binary: gemini
 ```
 
@@ -101,16 +99,16 @@ agents:
 workspace: /Users/sky1core/work/my-project   # 생략 시 agentbox.yml 위치에서 자동 추론
 
 sync:
-  files:                       # 로컬이 글로벌을 완전히 대체 (병합 아님)
-    - ~/.netrc
   remoteWrite: true            # 이 프로젝트에서는 push 허용
 
-network:
-  allowHosts:
-    - host.docker.internal
-    - 192.168.0.110
-  allowCidrs:
-    - 192.168.0.0/16
+vm:
+  cpus: 2
+  memory: "4GiB"
+
+mounts:
+  - location: "~/extra-data"
+    mountPoint: "/home/user/data"
+    writable: false
 
 startupWaitSec: 3
 
@@ -119,7 +117,7 @@ env:                            # 로컬 env는 글로벌을 키 단위로 오�
 
 agents:
   codex:
-    sandboxName: codex-myproj   # 자동생성 이름 오버라이드
+    vmName: codex-myproj       # 자동생성 이름 오버라이드
     model: o4-mini              # 프로젝트별 모델 오버라이드
 ```
 
@@ -136,55 +134,59 @@ agents:
 | 필드 | 설명 | 기본값 |
 |------|------|--------|
 | `workspace` | 프로젝트 경로. 미지정 시 `agentbox.yml` 위치 또는 `$PWD` | `$PWD` |
-| `env` | sandbox에 주입할 환경변수. 글로벌/로컬 모두 지원, 키 단위 머지 | `{}` |
-| `sync.files` | 호스트→sandbox 동기화할 파일 목록. 로컬이 글로벌을 완전히 대체 | `[]` |
+| `env` | VM에 주입할 환경변수. 글로벌/로컬 모두 지원, 키 단위 머지 | `{}` |
+| `vm.cpus` | VM CPU 수 | `4` |
+| `vm.memory` | VM 메모리 | `"8GiB"` |
+| `vm.disk` | VM 디스크 | `"20GiB"` |
+| `mounts` | 추가 볼륨 마운트 (아래 참고). 로컬이 글로벌을 완전히 대체 | `[]` |
 | `sync.remoteWrite` | `true`면 git push/merge 허용. `false`면 차단 (readonly-remote) | `false` |
-| `network.*` | `docker sandbox network proxy` 옵션 (`policy`, `allowHosts`, `blockHosts`, `allowCidrs`, `blockCidrs`, `bypassHosts`, `bypassCidrs`) | 비활성 |
-| `startupWaitSec` | sandbox 시작 대기 시간(초) | `5` |
-| `bootstrap.onCreateScript` | sandbox 최초 생성 시 1회 실행할 스크립트 | - |
-| `bootstrap.onStartScript` | sandbox 시작 시마다 실행할 스크립트 | - |
-| `agents.<name>.sandboxName` | sandbox 이름 오버라이드 | `<agent>-<디렉토리명>` |
+| `startupWaitSec` | VM 시작 대기 시간(초) | `5` |
+| `bootstrap.onCreateScript` | VM 최초 생성 시 1회 실행할 스크립트 | - |
+| `bootstrap.onStartScript` | VM 시작 시마다 실행할 스크립트 | - |
+| `agents.<name>.vmName` | VM 이름 오버라이드 | `agentbox-<디렉토리명>` |
 | `agents.<name>.model` | 에이전트 기본 모델 (글로벌/로컬) | - |
-| `agents.<name>.credentials.enabled` | 자격증명 자동 주입 on/off | `true` |
 
-### 인증 자동 주입
+### 추가 볼륨 마운트
 
-sandbox를 새로 만들면 호스트의 로그인 세션이 없으므로 에이전트마다 재인증해야 한다. agentbox는 에이전트별로 호스트의 자격증명을 자동으로 sandbox에 주입한다.
-
-| 에이전트 | 자동 주입 대상 | 조건 |
-|---------|--------------|------|
-| **Codex** | `~/.codex/auth.json`, `~/.codex/config.toml` 자동 복구 | 호스트에 파일 존재 시 |
-| **Claude** | `~/.claude/.credentials.json` + onboarding 완료 처리 | `CLAUDE_CODE_OAUTH_TOKEN` env 설정 시 |
-| **Kiro** | `~/.local/share/kiro-cli/data.sqlite3` | 호스트에 파일 존재 시 |
-| **Gemini** | `~/.gemini/oauth_creds.json` 등 4개 파일 | 호스트에 파일 존재 시 |
-| **GitHub** | `gh auth token` → `/run/secrets/gh_token` + `gh auth login` | 호스트에 `gh` 인증 시 |
-
-자동 주입을 끄려면:
+`mounts`로 호스트 디렉토리를 VM에 마운트할 수 있다. 읽기/쓰기 모두 지원하며, `mountPoint`로 VM 내부 경로를 별도 지정할 수 있다.
 
 ```yaml
-agents:
-  codex:
-    credentials:
-      enabled: false
+mounts:
+  - location: "~/datasets"           # 호스트 경로
+    mountPoint: "/mnt/datasets"      # VM 내부 경로 (생략 시 호스트와 동일)
+    writable: false                  # 읽기 전용
+
+  - location: "/opt/shared-tools"
+    mountPoint: "/tools"
+    writable: true                   # 쓰기 가능
 ```
 
-### 수동 파일 동기화
+| 필드 | 설명 | 필수 |
+|------|------|------|
+| `location` | 호스트 경로 (`~` 사용 가능) | O |
+| `mountPoint` | VM 내부 마운트 경로. 생략 시 `location`과 동일 | X |
+| `writable` | `true`: 읽기/쓰기, `false`: 읽기 전용 | X (기본 `false`) |
 
-`sync.files`에 등록하면 sandbox 시작 시 자동으로 복사된다.
+workspace는 자동으로 writable 마운트되므로 별도 설정 불필요.
 
-```yaml
-# ~/.config/agentbox/config.yml
-sync:
-  files:
-    - ~/.netrc                  # GitHub/Gitea 등 git credential
-    - ~/.gitconfig
-```
+### 자격증명 주입
 
-sandbox 삭제(`docker sandbox rm`) 후 재생성해도 자동으로 복사된다.
+호스트의 에이전트별 자격증명 파일만 `limactl copy`로 VM에 개별 복사한다. `~/.ssh`, `~/.aws` 등 불필요한 민감 파일은 노출되지 않는다.
+
+| 에이전트 | 자격증명 경로 |
+|---------|-------------|
+| **Codex** | `~/.codex/auth.json` |
+| **Claude** | `~/.claude/.credentials.json` |
+| **Kiro** | `~/Library/Application Support/kiro-cli/data.sqlite3` |
+| **Gemini** | `~/.gemini/oauth_creds.json` 등 |
+| **GitHub** | `~/.config/gh/` |
+| **Git** | `~/.gitconfig`, `~/.netrc` |
+
+VM 시작 시 호스트에서 최신 자격증명이 복사된다.
 
 ### 환경변수 주입
 
-`env` 필드로 sandbox에 환경변수를 주입할 수 있다. 글로벌/로컬 모두 지원하며 로컬이 글로벌을 **키 단위로 오버라이드**한다 (`sync.files`와 다르게 병합됨).
+`env` 필드로 VM에 환경변수를 주입할 수 있다. 글로벌/로컬 모두 지원하며 로컬이 글로벌을 **키 단위로 오버라이드**한다.
 
 ```yaml
 # ~/.config/agentbox/config.yml
@@ -192,14 +194,11 @@ env:
   CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-xxx..."
 ```
 
-주입 방식은 execMode에 따라 다르다:
-
-- **exec 모드** (codex, gemini): `docker sandbox exec -e KEY=VALUE`로 프로세스에 직접 전달
-- **run 모드** (claude, kiro): env가 있으면 자동으로 `exec -e` 방식으로 전환하여 전달
+환경변수는 에이전트 실행 시 `limactl shell -- env K=V cmd` 패턴으로 전달된다. 또한 `/etc/sandbox-persistent.sh`에도 기록되어 shell 세션에서 사용 가능하다.
 
 #### Claude Code 인증
 
-`CLAUDE_CODE_OAUTH_TOKEN` 환경변수를 설정하면 브라우저 로그인 없이 자동 인증된다. 환경변수 외에 `~/.claude/.credentials.json` 생성과 onboarding 완료 처리까지 자동으로 수행한다.
+`CLAUDE_CODE_OAUTH_TOKEN` 환경변수를 설정하면 브라우저 로그인 없이 자동 인증된다.
 
 ```yaml
 # ~/.config/agentbox/config.yml
@@ -209,54 +208,39 @@ env:
 
 토큰은 `claude setup-token` 명령으로 발급받을 수 있다.
 
-### Sandbox 네트워크 허용/차단
-
-`network` 설정을 쓰면 `docker sandbox network proxy <sandbox>`에 옵션을 자동 적용한다.
-
-```yaml
-network:
-  policy: deny
-  allowHosts:
-    - host.docker.internal
-    - github.com
-  allowCidrs:
-    - 192.168.0.0/16
-```
-
-> 참고: sandbox 안의 `localhost`는 sandbox 자신이다. 호스트 접근은 보통 `host.docker.internal` 또는 호스트 IP를 허용해야 한다.
-
 ### Bootstrap 스크립트
 
-sandbox 시작 전에 사용자 지정 스크립트를 실행할 수 있다. MCP 서버 빌드(`go install`), 패키지 설치 등 초기 준비에 사용한다.
+VM 시작 전에 사용자 지정 스크립트를 실행할 수 있다. MCP 서버 빌드(`go install`), 패키지 설치 등 초기 준비에 사용한다.
 
 ```yaml
 bootstrap:
-  onCreateScript: ./scripts/setup.sh       # sandbox 최초 생성 시 1회
+  onCreateScript: ./scripts/setup.sh       # VM 최초 생성 시 1회
   onStartScript:                           # 매 시작 시마다
     - ./scripts/ensure-deps.sh
     - ./scripts/start-mcp.sh
 ```
 
 - 상대경로는 workspace 기준으로 실행
-- `~/...` 또는 workspace 밖 절대경로는 호스트에서 읽어 sandbox에 주입 후 실행
-- 글로벌/로컬 모두 지원하며 순서는 global → local
+- `~/...` 또는 workspace 밖 절대경로는 호스트에서 읽어 `limactl copy`로 VM에 복사 후 실행
+- 글로벌/로컬 모두 지원하며 순서는 global -> local
 
-## sandbox 이름 규칙
+## VM 이름 규칙
 
-`<agent>-<프로젝트 디렉토리명>` 자동 생성. 예: `codex-my-project`, `claude-my-project`.
+`agentbox-<프로젝트 디렉토리명>` 자동 생성. 예: `agentbox-my-project`.
+
+하나의 VM에 여러 에이전트를 실행할 수 있다 (에이전트별 별도 VM이 아님).
 
 ## 동작 원리
 
 1. `$PWD`부터 상위로 올라가며 `agentbox.yml`을 찾아 로드 (없으면 `$PWD`를 workspace로 사용)
-2. sandbox가 없으면 자동 생성, 꺼져있으면 자동 시작
+2. VM이 없으면 자동 생성 (`limactl create`), 꺼져있으면 자동 시작 (`limactl start`)
 3. bootstrap 스크립트 실행 (설정된 경우)
-4. 에이전트별 자격증명 자동 주입 + `sync.files` 동기화
-5. `sync.remoteWrite`가 `false`(기본)면 readonly-remote 설치 → git push, 브랜치 삭제, PR 병합 등 차단
-6. 에이전트 CLI 실행 (승인 프롬프트 없이 자율 동작)
+4. `sync.remoteWrite`가 `false`(기본)면 readonly-remote 설치 -> git push, 브랜치 삭제, PR 병합 등 차단
+5. 에이전트 CLI 실행: `limactl shell -- env K=V <binary> <args>` (승인 프롬프트 없이 자율 동작)
 
 ## readonly-remote
 
-기본적으로 sandbox 내에서 원격 저장소를 직접 수정하는 행위를 차단한다:
+기본적으로 VM 내에서 원격 저장소를 직접 수정하는 행위를 차단한다:
 
 - **차단**: `git push`, `gh pr merge/close/edit`, `gh repo create/delete/fork`, `gh api -X POST/PATCH/DELETE`, `gh release`
 - **허용**: `git commit/pull/fetch`, `gh pr create/view/list/checks/diff/status`, `gh issue` (전체), `gh project` (delete 제외), `gh repo view/clone`, `gh api` (GET), `gh search/auth/help`

@@ -26,22 +26,3 @@ export function execCapture(cmd: string, args: string[]): ExecResult {
     status: result.status ?? 1,
   };
 }
-
-/**
- * Run a command with stdin piped from a buffer.
- */
-export function execWithStdin(
-  cmd: string,
-  args: string[],
-  input: Buffer | string,
-): ExecResult {
-  const result = spawnSync(cmd, args, {
-    input,
-    encoding: "utf-8",
-  });
-  return {
-    stdout: result.stdout ?? "",
-    stderr: result.stderr ?? "",
-    status: result.status ?? 1,
-  };
-}
