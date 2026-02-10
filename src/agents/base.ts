@@ -17,9 +17,19 @@ async function createAndStart(config: ResolvedConfig): Promise<void> {
   const createCode = lima.create(config);
   if (createCode !== 0) throw new Error(`failed to create VM '${vmName}' (exit=${createCode})`);
 
-  log(`starting VM '${vmName}'...`);
-  const startCode = lima.start(vmName);
-  if (startCode !== 0) throw new Error(`failed to start VM '${vmName}' (exit=${startCode})`);
+  // First start: provision scripts run (apt-get, usermod -aG docker, etc.)
+  log(`starting VM '${vmName}' (provisioning)...`);
+  const firstStart = lima.start(vmName);
+  if (firstStart !== 0) throw new Error(`failed to start VM '${vmName}' (exit=${firstStart})`);
+
+  // Restart to refresh SSH ControlMaster with correct supplementary groups.
+  // During first start, SSH ControlMaster is established BEFORE provision
+  // completes, so the session doesn't have the docker group yet.
+  // A second start creates a new SSH session after usermod has taken effect.
+  log(`restarting VM '${vmName}' to apply group changes...`);
+  lima.stop(vmName);
+  const secondStart = lima.start(vmName);
+  if (secondStart !== 0) throw new Error(`failed to start VM '${vmName}' (exit=${secondStart})`);
 
   await sleep(config.startupWaitSec);
 }

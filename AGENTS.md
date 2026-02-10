@@ -31,6 +31,8 @@ Lima VM은 **전체 Linux 커널을 실행하는 경량 VM**이므로:
 - `--privileged` 없이도 완전한 격리 + 무제한 권한을 동시에 달성한다.
 - macOS의 Virtualization.Framework(VZ)로 오버헤드가 매우 낮다.
 
+**절대 금지: `chmod 666 /var/run/docker.sock`** — 격리 프로젝트에서 소켓에 과도한 권한을 부여하는 것은 `--privileged`와 같은 맥락이다. Docker 접근 문제는 올바른 그룹 설정으로 해결해야 한다.
+
 ## 핵심 목표(설계 원칙)
 
 - Lima VM의 격리 기능을 활용해 **최대한 자동화**한다.
