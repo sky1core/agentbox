@@ -216,8 +216,9 @@ export async function run(argv: string[]): Promise<void> {
   if (VM_COMMANDS.includes(args[0] as (typeof VM_COMMANDS)[number])) {
     const local = loadLocalConfig(process.cwd()) ?? { workspace: process.cwd() };
     const global = loadGlobalConfig();
-    const config = resolveConfig("codex", local, global);
-    const { vmName } = config.agent;
+    const workspace = local.workspace!;
+    // Top-level commands use the default VM name, not agent-specific overrides
+    const vmName = `agentbox-${basename(workspace)}`;
 
     if (args[0] === "stop") {
       const code = lima.stop(vmName);
@@ -230,10 +231,13 @@ export async function run(argv: string[]): Promise<void> {
       process.exit(code);
     }
     if (args[0] === "shell") {
+      // Still need full config for ensureRunning (credentials, env, bootstrap)
+      const config = resolveConfig("codex", local, global);
+      config.agent.vmName = vmName;
       await ensureRunning(config);
-      printSandboxBanner(vmName, config.workspace);
+      printSandboxBanner(vmName, workspace);
       setTerminalTitle(`[agentbox] ${vmName}`);
-      const code = lima.shellInteractive(vmName, config.workspace, ["bash"], config.env);
+      const code = lima.shellInteractive(vmName, workspace, ["bash"], config.env);
       process.exit(code);
     }
   }

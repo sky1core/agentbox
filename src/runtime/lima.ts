@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir, homedir, userInfo } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { execInherit, execCapture } from "../utils/process.js";
 import { log } from "../utils/logger.js";
 import type { ResolvedConfig, MountConfig } from "../config/schema.js";
@@ -108,8 +108,9 @@ export function buildTemplate(config: ResolvedConfig): string {
   lines.push("      export DEBIAN_FRONTEND=noninteractive");
   lines.push("      apt-get update");
   lines.push("      apt-get install -y curl git build-essential unzip jq docker.io");
-  lines.push("      # Add the Lima guest user to docker group");
-  lines.push(`      usermod -aG docker "${userInfo().username}" || true`);
+  lines.push("      # Add the Lima guest user to docker group (resolve inside VM)");
+  lines.push("      . /run/lima-cidata/lima.env");
+  lines.push('      usermod -aG docker "$LIMA_CIDATA_USER" || true');
   lines.push("      systemctl enable docker");
   lines.push("");
 
