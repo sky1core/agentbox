@@ -248,6 +248,7 @@ export function shellInteractive(
   // Build remote command: source env + cd + exec
   const escaped = command.map((c) => `'${c.replace(/'/g, "'\\''")}'`).join(" ");
   const parts = [
+    `export PATH="$HOME/.local/bin:$PATH"`,
     `. /etc/sandbox-persistent.sh 2>/dev/null || true`,
     `cd '${workdir.replace(/'/g, "'\\''")}'`,
     `exec ${escaped}`,
