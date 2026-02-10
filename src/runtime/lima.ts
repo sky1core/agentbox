@@ -116,11 +116,6 @@ export function buildTemplate(config: ResolvedConfig): string {
   lines.push("      # Add the Lima guest user to docker group");
   lines.push(`      usermod -aG docker "${userInfo().username}" || true`);
   lines.push("      systemctl enable docker");
-  lines.push("      # Ensure docker.sock is accessible without newgrp (Lima SSH sessions may miss group)");
-  lines.push("      mkdir -p /etc/systemd/system/docker.service.d");
-  lines.push("      printf '[Service]\\nExecStartPost=/bin/chmod 666 /var/run/docker.sock\\n' > /etc/systemd/system/docker.service.d/socket-perms.conf");
-  lines.push("      systemctl daemon-reload");
-  lines.push("      systemctl restart docker");
   lines.push("");
 
   // Phase 2: Node.js, gh CLI (root)
