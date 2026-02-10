@@ -221,14 +221,25 @@ export function injectEnvVars(
   env: Record<string, string>,
 ): void {
   const entries = Object.entries(env);
-  if (entries.length === 0) return;
+  if (entries.length === 0) {
+    // Clear stale env file so removed keys don't persist
+    lima.shellNonInteractive(vmName, workspace, [
+      "sh", "-c",
+      "sudo rm -f /etc/sandbox-persistent.sh",
+    ]);
+    return;
+  }
 
   log("injecting environment variables");
   const validKey = /^[A-Za-z_][A-Za-z0-9_]*$/;
   const args = entries
     .filter(([k]) => validKey.test(k))
     .map(([k, v]) => {
-      const escaped = v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/'/g, "'\\''");
+      const escaped = v
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"')
+        .replace(/\$/g, "\\$")
+        .replace(/`/g, "\\`");
       return `'export ${k}="${escaped}"'`;
     })
     .join(" ");
