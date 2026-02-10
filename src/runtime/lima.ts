@@ -224,11 +224,13 @@ export function remove(vmName: string): number {
 
 /**
  * Build env args for `limactl shell -- env K=V ... cmd`.
+ * Always prepends ~/.local/bin to PATH so readonly-remote wrappers
+ * (git, gh) are found in both interactive and non-interactive sessions.
+ * Shell variables ($HOME, $PATH) are expanded by the remote bash via SSH.
  */
 function envArgs(env: Record<string, string>): string[] {
   const entries = Object.entries(env);
-  if (entries.length === 0) return [];
-  return ["env", ...entries.map(([k, v]) => `${k}=${v}`)];
+  return ["env", "PATH=$HOME/.local/bin:$PATH", ...entries.map(([k, v]) => `${k}=${v}`)];
 }
 
 /**
