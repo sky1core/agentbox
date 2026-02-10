@@ -16,7 +16,20 @@ Lima VM 통합 런처. AI 코딩 에이전트(Codex, Claude Code, Kiro, Gemini)�
 
 격리 환경이 필요한 핵심 이유는, 개발 위임 흐름에서 LLM이 지속적으로 요구하는 승인(prompt for approval)을 **처음부터 풀어(또는 최소화해) 운영**할 수 있기 때문이다. 즉, "무제한 권한"을 줄 수 있는 전제 조건으로서 격리가 필요하다.
 
-Lima VM은 일반 Docker 컨테이너와 달리 VM 내부에서 Docker를 네이티브로 실행할 수 있어, Testcontainers 류의 컨테이너 기반 테스트도 정상 동작한다.
+### 왜 DinD(Docker-in-Docker)가 아닌 Lima VM인가
+
+DinD는 Docker 컨테이너 안에서 Docker를 실행하는 방식인데, agentbox 용도에는 부적합하다:
+
+- **`--privileged` 필수**: DinD는 호스트 커널에 특권 접근이 필요하다. 격리 목적인데 특권 컨테이너를 쓰면 격리 의미가 없다.
+- **스토리지/cgroup 문제**: 중첩 Docker는 스토리지 드라이버 충돌, cgroup 계층 문제가 발생한다.
+- **불완전한 환경**: 컨테이너는 init 시스템(systemd)이 없어 서비스 관리가 제한적이다.
+
+Lima VM은 **전체 Linux 커널을 실행하는 경량 VM**이므로:
+
+- Docker가 네이티브로 동작한다 (Testcontainers, docker compose 등 완전 지원).
+- systemd, cgroup, 네트워크 스택이 완전하다.
+- `--privileged` 없이도 완전한 격리 + 무제한 권한을 동시에 달성한다.
+- macOS의 Virtualization.Framework(VZ)로 오버헤드가 매우 낮다.
 
 ## 핵심 목표(설계 원칙)
 
