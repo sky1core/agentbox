@@ -3,7 +3,7 @@ import { isValidAgent, VALID_AGENTS } from "./config/schema.js";
 import { loadLocalConfig, loadGlobalConfig, resolveConfig } from "./config/loader.js";
 import { ensureRunning } from "./agents/base.js";
 import { COMMON_COMMANDS } from "./agents/types.js";
-import * as docker from "./docker/sandbox.js";
+import * as lima from "./runtime/lima.js";
 import { log, error } from "./utils/logger.js";
 
 function hasModelFlag(argv: string[]): boolean {
@@ -28,8 +28,6 @@ export function withDefaultModel(agent: AgentName, argv: string[], model?: strin
     case "codex":
     case "claude":
     case "gemini":
-    case "copilot":
-    case "cagent":
       return ["--model", model, ...argv];
   }
 }
@@ -37,8 +35,7 @@ export function withDefaultModel(agent: AgentName, argv: string[], model?: strin
 function printUsage(): void {
   const lines = [
     "Usage:",
-    "  agentbox ls",
-    "  agentbox <agent> [ls|shell|stop]",
+    "  agentbox ls|stop|rm|shell        # VM-level commands (no agent needed)",
     "  agentbox <agent>                 # interactive (no args)",
     "  agentbox <agent> <args...>       # passthrough to the agent CLI",
     "  agentbox --help",
@@ -62,34 +59,21 @@ function printUsage(): void {
     "",
     "Config merge rules:",
     "  - env: merge by key (global -> local override)",
-    "  - sync.files: local overrides global entirely (no merge)",
+    "  - mounts: local overrides global entirely",
     "  - bootstrap scripts: concat (global then local)",
     "",
     "Config keys (YAML):",
     "  workspace: <path>                       # optional (defaults to agentbox.yml dir or $PWD)",
     "  startupWaitSec: <sec>                   # local only (global is defaults.startupWaitSec)",
-    "  sync.files: [~/.netrc, ~/.gitconfig...]",
+    "  vm: { cpus, memory, disk }              # Lima VM resources",
+    "  mounts: [{ location, mountPoint, writable }]",
     "  sync.remoteWrite: true|false            # allow/disallow remote writes (readonly-remote)",
-    "  network.policy: allow|deny",
-    "  network.allowHosts: [host,...]          # docker sandbox network proxy --allow-host",
-    "  network.blockHosts: [host,...]",
-    "  network.allowCidrs: [cidr,...]",
-    "  network.blockCidrs: [cidr,...]",
-    "  network.bypassHosts: [host,...]",
-    "  network.bypassCidrs: [cidr,...]",
     "  env: { KEY: VALUE }                     # merged by key",
-    "  bootstrap.onCreateScript: <path|[...]>  # runs once when sandbox is created",
+    "  bootstrap.onCreateScript: <path|[...]>  # runs once when VM is created",
     "  bootstrap.onStartScript:  <path|[...]>  # runs on every ensureRunning()",
-    "  agents.<agent>.sandboxName: <name>",
-    "  agents.<agent>.credentials.enabled: true|false",
-    "  agents.codex.credentials.files: [\"~/.codex/auth.json\"]",
-    "  agents.<agent>.execMode: run|exec       # global only",
+    "  agents.<agent>.vmName: <name>",
     "  agents.<agent>.model: <model>           # global/local",
     "  agents.<agent>.binary/defaultArgs       # global only",
-    "",
-    "MCP note (sandbox):",
-    "  - MCP server binaries must run inside the Linux sandbox.",
-    "  - Use bootstrap to install/build them in-sandbox (go install/npm/etc).",
   ];
   console.log(lines.join("\n"));
 }
@@ -100,8 +84,6 @@ function agentDescription(agent: AgentName): string {
     claude: "Claude Code",
     kiro: "Kiro",
     gemini: "Gemini CLI",
-    copilot: "GitHub Copilot",
-    cagent: "Cagent",
   };
   return descriptions[agent];
 }
@@ -115,8 +97,34 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   if (args[0] === "ls") {
-    const code = docker.listAll();
+    const code = lima.listAll();
     process.exit(code);
+  }
+
+  // Top-level VM commands (no agent needed — VM is per-workspace, not per-agent)
+  const VM_COMMANDS = ["stop", "rm", "shell"] as const;
+  if (VM_COMMANDS.includes(args[0] as (typeof VM_COMMANDS)[number])) {
+    const local = loadLocalConfig(process.cwd()) ?? { workspace: process.cwd() };
+    const global = loadGlobalConfig();
+    const config = resolveConfig("codex", local, global);
+    const { vmName } = config.agent;
+
+    if (args[0] === "stop") {
+      const code = lima.stop(vmName);
+      log(`${vmName} stopped`);
+      process.exit(code);
+    }
+    if (args[0] === "rm") {
+      const code = lima.remove(vmName);
+      log(`${vmName} removed`);
+      process.exit(code);
+    }
+    if (args[0] === "shell") {
+      await ensureRunning(config);
+      log(`opening bash shell in ${vmName}`);
+      const code = lima.shellInteractive(vmName, config.workspace, ["bash"], config.env);
+      process.exit(code);
+    }
   }
 
   const agentArg = args[0];
@@ -132,7 +140,7 @@ export async function run(argv: string[]): Promise<void> {
 
   // ls doesn't need config
   if (command === "ls") {
-    const code = docker.listAll();
+    const code = lima.listAll();
     process.exit(code);
   }
 
@@ -156,73 +164,51 @@ export async function dispatch(
   args: string[],
   config: ResolvedConfig,
 ): Promise<void> {
-  const { sandboxName } = config.agent;
-  const hasEnv = Object.keys(config.env).length > 0;
+  const { vmName } = config.agent;
   const wantTty = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
   // Reserved agentbox commands
   if (command === "shell") {
     await ensureRunning(config);
-    log(`opening bash shell in ${sandboxName}`);
-    const code = docker.execInteractive(sandboxName, config.workspace, ["bash"], config.env);
+    log(`opening bash shell in ${vmName}`);
+    const code = lima.shellInteractive(vmName, config.workspace, ["bash"], config.env);
     process.exit(code);
   }
 
   if (command === "stop") {
-    const code = docker.stop(sandboxName);
-    log(`${sandboxName} stopped`);
+    const code = lima.stop(vmName);
+    log(`${vmName} stopped`);
     process.exit(code);
   }
 
-  // Passthrough (default): behave like the original agent CLI.
-  // - agentbox <agent>            => interactive (no args)
-  // - agentbox <agent> <args...>  => passthrough
+  if (command === "rm") {
+    const code = lima.remove(vmName);
+    log(`${vmName} removed`);
+    process.exit(code);
+  }
+
+  // Passthrough: all agents use limactl shell with binary + args.
   await ensureRunning(config);
   const passthroughArgs = command ? [command, ...args] : [];
 
+  const binary = config.agent.binary ?? config.agent.name;
+
   if (passthroughArgs.length === 0) {
+    // Interactive: binary + defaultArgs
     log(`${agent} interactive`);
-    let code: number;
-    if (config.agent.execMode === "exec" || hasEnv) {
-      const agentArgs = withDefaultModel(agent, [...config.agent.defaultArgs], config.agent.model);
-      code = docker.execInteractive(
-        sandboxName,
-        config.workspace,
-        [config.agent.binary!, ...agentArgs],
-        config.env,
-      );
-    } else {
-      // Keep run-mode interactive behavior unchanged; only inject model when applicable.
-      const runArgs = withDefaultModel(agent, [], config.agent.model);
-      code = runArgs.length > 0 ? docker.run(sandboxName, ["--", ...runArgs]) : docker.run(sandboxName);
-    }
+    const agentArgs = withDefaultModel(agent, [...config.agent.defaultArgs], config.agent.model);
+    const code = lima.shellInteractive(vmName, config.workspace, [binary, ...agentArgs], config.env);
     process.exit(code);
   }
 
+  // Passthrough: binary + defaultArgs + user args
   log(`${agent} passthrough`);
-  let code: number;
-  if (config.agent.execMode === "exec" || hasEnv) {
-    const agentArgs = withDefaultModel(
-      agent,
-      [...config.agent.defaultArgs, ...passthroughArgs],
-      config.agent.model,
-    );
-    const runner = wantTty ? docker.execInteractive : docker.execNonInteractive;
-    code = runner(
-      sandboxName,
-      config.workspace,
-      [config.agent.binary!, ...agentArgs],
-      config.env,
-    );
-  } else {
-    // run-mode passthrough (no env injection support).
-    // Preserve user passthrough args as-is and only inject default model.
-    const runArgs = withDefaultModel(
-      agent,
-      [...passthroughArgs],
-      config.agent.model,
-    );
-    code = runArgs.length > 0 ? docker.run(sandboxName, ["--", ...runArgs]) : docker.run(sandboxName);
-  }
+  const agentArgs = withDefaultModel(
+    agent,
+    [...config.agent.defaultArgs, ...passthroughArgs],
+    config.agent.model,
+  );
+  const runner = wantTty ? lima.shellInteractive : lima.shellNonInteractive;
+  const code = runner(vmName, config.workspace, [binary, ...agentArgs], config.env);
   process.exit(code);
 }

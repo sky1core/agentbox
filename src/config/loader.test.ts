@@ -10,119 +10,77 @@ describe("resolveConfig", () => {
   it("uses hardcoded defaults when no global config", () => {
     const config = resolveConfig("codex", minimalLocal, {});
     expect(config.workspace).toBe("/home/user/work/my-project");
-    expect(config.syncFiles).toEqual([]);
     expect(config.startupWaitSec).toBe(5);
     expect(config.agent.name).toBe("codex");
-    expect(config.agent.execMode).toBe("exec");
     expect(config.agent.binary).toBe("codex");
-    expect(config.agent.sandboxName).toBe("codex-my-project");
+    expect(config.agent.vmName).toBe("agentbox-my-project");
   });
 
-  it("uses run execMode for claude", () => {
+  it("uses correct binary for claude", () => {
     const config = resolveConfig("claude", minimalLocal, {});
-    expect(config.agent.execMode).toBe("run");
     expect(config.agent.binary).toBe("claude");
-    expect(config.agent.sandboxName).toBe("claude-my-project");
+    expect(config.agent.vmName).toBe("agentbox-my-project");
+  });
+
+  it("vm defaults are applied", () => {
+    const config = resolveConfig("codex", minimalLocal, {});
+    expect(config.vm).toEqual({ cpus: 4, memory: "8GiB", disk: "20GiB" });
+  });
+
+  it("global vm config overrides defaults", () => {
+    const global: GlobalConfig = {
+      vm: { cpus: 8, memory: "16GiB" },
+    };
+    const config = resolveConfig("codex", minimalLocal, global);
+    expect(config.vm.cpus).toBe(8);
+    expect(config.vm.memory).toBe("16GiB");
+    expect(config.vm.disk).toBe("20GiB"); // default preserved
+  });
+
+  it("local vm config overrides global", () => {
+    const global: GlobalConfig = { vm: { cpus: 8 } };
+    const local: LocalConfig = {
+      workspace: "/home/user/work/my-project",
+      vm: { cpus: 2 },
+    };
+    const config = resolveConfig("codex", local, global);
+    expect(config.vm.cpus).toBe(2);
   });
 
   it("global config overrides defaults", () => {
     const global: GlobalConfig = {
-      sync: { files: ["~/.netrc", "~/.gitconfig"] },
       defaults: { startupWaitSec: 10 },
     };
     const config = resolveConfig("codex", minimalLocal, global);
-    expect(config.syncFiles).toEqual(["~/.netrc", "~/.gitconfig"]);
     expect(config.startupWaitSec).toBe(10);
   });
 
   it("local config overrides global config", () => {
     const global: GlobalConfig = {
-      sync: { files: ["~/.netrc", "~/.gitconfig"] },
       defaults: { startupWaitSec: 10 },
     };
     const local: LocalConfig = {
       workspace: "/home/user/work/my-project",
-      sync: { files: ["~/.netrc"] },
       startupWaitSec: 3,
     };
     const config = resolveConfig("codex", local, global);
-    expect(config.syncFiles).toEqual(["~/.netrc"]);
     expect(config.startupWaitSec).toBe(3);
   });
 
-  it("local sandboxName overrides auto-generated name", () => {
+  it("local vmName overrides auto-generated name", () => {
     const local: LocalConfig = {
       workspace: "/home/user/work/my-project",
       agents: {
-        codex: { sandboxName: "custom-name" },
+        codex: { vmName: "custom-name" },
       },
     };
     const config = resolveConfig("codex", local, {});
-    expect(config.agent.name).toBe("codex");
-    expect(config.agent.sandboxName).toBe("custom-name");
-  });
-
-  it("global agent config overrides defaults", () => {
-    const global: GlobalConfig = {
-      agents: {
-        codex: { execMode: "run" },
-      },
-    };
-    const config = resolveConfig("codex", minimalLocal, global);
-    expect(config.agent.execMode).toBe("run");
+    expect(config.agent.vmName).toBe("custom-name");
   });
 
   it("remoteWrite defaults to false", () => {
     const config = resolveConfig("codex", minimalLocal, {});
     expect(config.remoteWrite).toBe(false);
-  });
-
-  it("network proxy defaults to empty lists", () => {
-    const config = resolveConfig("codex", minimalLocal, {});
-    expect(config.networkProxy).toEqual({
-      policy: undefined,
-      allowHosts: [],
-      blockHosts: [],
-      allowCidrs: [],
-      blockCidrs: [],
-      bypassHosts: [],
-      bypassCidrs: [],
-    });
-  });
-
-  it("uses global network proxy config", () => {
-    const global: GlobalConfig = {
-      network: {
-        policy: "deny",
-        allowHosts: ["host.docker.internal", "localhost"],
-        allowCidrs: ["10.0.0.0/8"],
-      },
-    };
-    const config = resolveConfig("codex", minimalLocal, global);
-    expect(config.networkProxy.policy).toBe("deny");
-    expect(config.networkProxy.allowHosts).toEqual(["host.docker.internal", "localhost"]);
-    expect(config.networkProxy.allowCidrs).toEqual(["10.0.0.0/8"]);
-  });
-
-  it("local network proxy overrides global per field", () => {
-    const global: GlobalConfig = {
-      network: {
-        policy: "deny",
-        allowHosts: ["host.docker.internal"],
-        allowCidrs: ["10.0.0.0/8"],
-      },
-    };
-    const local: LocalConfig = {
-      workspace: "/home/user/work/my-project",
-      network: {
-        policy: "allow",
-        allowHosts: ["localhost"],
-      },
-    };
-    const config = resolveConfig("codex", local, global);
-    expect(config.networkProxy.policy).toBe("allow");
-    expect(config.networkProxy.allowHosts).toEqual(["localhost"]);
-    expect(config.networkProxy.allowCidrs).toEqual(["10.0.0.0/8"]);
   });
 
   it("global config can set remoteWrite to true", () => {
@@ -143,15 +101,6 @@ describe("resolveConfig", () => {
     };
     const config = resolveConfig("codex", local, global);
     expect(config.remoteWrite).toBe(false);
-  });
-
-  it("local remoteWrite true overrides default false", () => {
-    const local: LocalConfig = {
-      workspace: "/home/user/work/my-project",
-      sync: { remoteWrite: true },
-    };
-    const config = resolveConfig("codex", local, {});
-    expect(config.remoteWrite).toBe(true);
   });
 
   it("env defaults to empty object", () => {
@@ -179,20 +128,53 @@ describe("resolveConfig", () => {
     expect(config.env).toEqual({ FOO: "local", BAR: "global" });
   });
 
-  it("enables credential injection by default and sets codex default credential files", () => {
+  it("mounts default to empty array", () => {
     const config = resolveConfig("codex", minimalLocal, {});
-    expect(config.agent.credentials.enabled).toBe(true);
-    expect(config.agent.credentials.files).toEqual(["~/.codex/auth.json"]);
+    expect(config.mounts).toEqual([]);
   });
 
-  it("allows disabling credential injection per-agent via local config", () => {
+  it("global mounts are used when local absent", () => {
+    const global: GlobalConfig = {
+      mounts: [{ location: "~/data", writable: false }],
+    };
+    const config = resolveConfig("codex", minimalLocal, global);
+    expect(config.mounts).toEqual([{ location: "~/data", writable: false }]);
+  });
+
+  it("local mounts override global entirely", () => {
+    const global: GlobalConfig = {
+      mounts: [{ location: "~/data" }],
+    };
     const local: LocalConfig = {
       workspace: "/home/user/work/my-project",
-      agents: {
-        gemini: { credentials: { enabled: false } },
-      },
+      mounts: [{ location: "~/other", writable: true }],
     };
-    const config = resolveConfig("gemini", local, {});
-    expect(config.agent.credentials.enabled).toBe(false);
+    const config = resolveConfig("codex", local, global);
+    expect(config.mounts).toEqual([{ location: "~/other", writable: true }]);
+  });
+
+  it("bootstrap scripts concat global then local", () => {
+    const global: GlobalConfig = {
+      bootstrap: { onCreateScript: "global-create.sh", onStartScript: "global-start.sh" },
+    };
+    const local: LocalConfig = {
+      workspace: "/home/user/work/my-project",
+      bootstrap: { onCreateScript: "local-create.sh", onStartScript: ["local-start1.sh", "local-start2.sh"] },
+    };
+    const config = resolveConfig("codex", local, global);
+    expect(config.bootstrap.onCreateScripts).toEqual(["global-create.sh", "local-create.sh"]);
+    expect(config.bootstrap.onStartScripts).toEqual(["global-start.sh", "local-start1.sh", "local-start2.sh"]);
+  });
+
+  it("model from local agent overrides global agent", () => {
+    const global: GlobalConfig = {
+      agents: { codex: { model: "o3" } },
+    };
+    const local: LocalConfig = {
+      workspace: "/home/user/work/my-project",
+      agents: { codex: { model: "o4-mini" } },
+    };
+    const config = resolveConfig("codex", local, global);
+    expect(config.agent.model).toBe("o4-mini");
   });
 });

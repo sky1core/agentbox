@@ -8,7 +8,8 @@ interface AgentCommand {
 }
 
 export const COMMON_COMMANDS: Record<string, AgentCommand> = {
-  ls: { description: "List all sandboxes" },
-  shell: { description: "Open bash shell in sandbox" },
-  stop: { description: "Stop the sandbox" },
+  ls: { description: "List all VMs" },
+  shell: { description: "Open bash shell in VM" },
+  stop: { description: "Stop the VM" },
+  rm: { description: "Delete the VM" },
 };

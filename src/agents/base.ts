@@ -1,74 +1,67 @@
 import type { ResolvedConfig } from "../config/schema.js";
-import * as docker from "../docker/sandbox.js";
-import { syncFiles } from "../sync/files.js";
+import * as lima from "../runtime/lima.js";
 import { runBootstrap } from "../sync/bootstrap.js";
-import { installReadonlyRemote, injectGhToken, injectClaudeCredentials, injectKiroCredentials, injectGeminiCredentials, injectCodexCredentials, ensureCodexConfig, ensureHostDockerInternal, verifyProxyConnectivity } from "../sync/presets.js";
+import { installReadonlyRemote, injectEnvVars, syncKiroCredentials } from "../sync/presets.js";
 import { log } from "../utils/logger.js";
 
 function sleep(sec: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, sec * 1000));
 }
 
+/**
+ * Create and start a new VM. Returns after VM is Running.
+ */
+async function createAndStart(config: ResolvedConfig): Promise<void> {
+  const { vmName } = config.agent;
+
+  const createCode = lima.create(config);
+  if (createCode !== 0) throw new Error(`failed to create VM '${vmName}' (exit=${createCode})`);
+
+  log(`starting VM '${vmName}'...`);
+  const startCode = lima.start(vmName);
+  if (startCode !== 0) throw new Error(`failed to start VM '${vmName}' (exit=${startCode})`);
+
+  await sleep(config.startupWaitSec);
+}
+
 export async function ensureRunning(config: ResolvedConfig): Promise<void> {
-  const { sandboxName } = config.agent;
-  const state = docker.getState(sandboxName);
-  const credsEnabled = config.agent.credentials.enabled;
+  const { vmName } = config.agent;
+  const state = lima.getState(vmName);
 
   if (state === "") {
-    log(`'${sandboxName}' not found. Creating...`);
-    docker.create(sandboxName, config.agent.name, config.workspace);
+    log(`'${vmName}' not found. Creating...`);
+    await createAndStart(config);
+
+    syncKiroCredentials(vmName, config.workspace);
+    injectEnvVars(vmName, config.workspace, config.env);
+    runBootstrap("onCreate", vmName, config.workspace, config.bootstrap.onCreateScripts, config.env);
+    runBootstrap("onStart", vmName, config.workspace, config.bootstrap.onStartScripts, config.env);
+    if (!config.remoteWrite) installReadonlyRemote(vmName, config.workspace);
+    return;
+  }
+
+  if (state === "Stopped") {
+    log(`starting ${vmName}...`);
+    const code = lima.start(vmName);
+    if (code !== 0) throw new Error(`failed to start VM '${vmName}' (exit=${code})`);
     await sleep(config.startupWaitSec);
-    if (docker.configureNetworkProxy(sandboxName, config.networkProxy) !== 0) {
-      log("WARNING: failed to apply sandbox network proxy options");
-    }
-    ensureHostDockerInternal(sandboxName, config.workspace);
-    if (config.agent.name === "codex") ensureCodexConfig(sandboxName);
-    injectGhToken(sandboxName);
-    if (credsEnabled) {
-      if (config.agent.name === "claude") injectClaudeCredentials(sandboxName, config.env);
-      if (config.agent.name === "kiro") injectKiroCredentials(sandboxName);
-      if (config.agent.name === "gemini") injectGeminiCredentials(sandboxName);
-      if (config.agent.name === "codex") injectCodexCredentials(sandboxName, config.agent.credentials.files);
-    }
-
-    if (config.syncFiles.length > 0) syncFiles(sandboxName, config.syncFiles);
-    runBootstrap("onCreate", sandboxName, config.workspace, config.bootstrap.onCreateScripts, config.env);
-    runBootstrap("onStart", sandboxName, config.workspace, config.bootstrap.onStartScripts, config.env);
-    if (!config.remoteWrite) installReadonlyRemote(sandboxName);
-  } else {
-    if (state === "stopped") {
-      log(`starting ${sandboxName}...`);
-      docker.runBackground(sandboxName);
-      await sleep(config.startupWaitSec);
-    }
-
-    if (docker.configureNetworkProxy(sandboxName, config.networkProxy) !== 0) {
-      log("WARNING: failed to apply sandbox network proxy options");
-    }
-    ensureHostDockerInternal(sandboxName, config.workspace);
-    if (config.agent.name === "codex") ensureCodexConfig(sandboxName);
-    injectGhToken(sandboxName);
-    if (credsEnabled) {
-      if (config.agent.name === "claude") injectClaudeCredentials(sandboxName, config.env);
-      if (config.agent.name === "kiro") injectKiroCredentials(sandboxName);
-      if (config.agent.name === "gemini") injectGeminiCredentials(sandboxName);
-      if (config.agent.name === "codex") injectCodexCredentials(sandboxName, config.agent.credentials.files);
-    }
-    if (config.syncFiles.length > 0) syncFiles(sandboxName, config.syncFiles);
-    runBootstrap("onStart", sandboxName, config.workspace, config.bootstrap.onStartScripts, config.env);
-    if (!config.remoteWrite) installReadonlyRemote(sandboxName);
   }
 
-  // Network health check: verify proxy connectivity after all setup
-  if (!verifyProxyConnectivity(sandboxName, config.workspace)) {
-    log("network check failed, retrying in 3s...");
-    await sleep(3);
-    // Re-pin /etc/hosts in case bootstrap or sync overwrote it
-    ensureHostDockerInternal(sandboxName, config.workspace);
-    if (!verifyProxyConnectivity(sandboxName, config.workspace)) {
-      log("WARNING: sandbox network is not working");
-      log(`  try: docker sandbox stop ${sandboxName}`);
-      log("  then re-run agentbox");
-    }
+  if (state === "Broken") {
+    log(`VM '${vmName}' is broken. Deleting and recreating...`);
+    lima.remove(vmName);
+    await createAndStart(config);
+
+    syncKiroCredentials(vmName, config.workspace);
+    injectEnvVars(vmName, config.workspace, config.env);
+    runBootstrap("onCreate", vmName, config.workspace, config.bootstrap.onCreateScripts, config.env);
+    runBootstrap("onStart", vmName, config.workspace, config.bootstrap.onStartScripts, config.env);
+    if (!config.remoteWrite) installReadonlyRemote(vmName, config.workspace);
+    return;
   }
+
+  // Running or Stopped (now restarted) — inject env and run onStart
+  injectEnvVars(vmName, config.workspace, config.env);
+  runBootstrap("onStart", vmName, config.workspace, config.bootstrap.onStartScripts, config.env);
+  if (!config.remoteWrite) installReadonlyRemote(vmName, config.workspace);
 }

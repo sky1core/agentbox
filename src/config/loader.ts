@@ -6,9 +6,10 @@ import type {
   AgentName,
   GlobalConfig,
   LocalConfig,
+  MountConfig,
   ResolvedConfig,
 } from "./schema.js";
-import { DEFAULT_GLOBAL_CONFIG, getAgentDefaults } from "./defaults.js";
+import { DEFAULT_GLOBAL_CONFIG, DEFAULT_VM_CONFIG, getAgentDefaults } from "./defaults.js";
 
 const GLOBAL_CONFIG_PATH = join(
   homedir(),
@@ -29,7 +30,7 @@ export function loadGlobalConfig(): GlobalConfig {
 }
 
 /**
- * Search upward from startDir for sandbox.yml
+ * Search upward from startDir for agentbox.yml
  */
 export function findLocalConfigPath(startDir: string): string | null {
   let dir = startDir;
@@ -66,16 +67,9 @@ export function resolveConfig(
     return Array.isArray(v) ? v : [v];
   };
 
-  const normalizeList = (v?: string[]): string[] =>
-    (v ?? []).map((s) => s.trim()).filter(Boolean);
-
   const agentDefaults = getAgentDefaults(agent);
   const globalAgent = global.agents?.[agent];
   const localAgent = local.agents?.[agent];
-
-  // local files override global files entirely (no merge)
-  const syncFiles: string[] =
-    local.sync?.files ?? global.sync?.files ?? [];
 
   const remoteWrite: boolean =
     local.sync?.remoteWrite ??
@@ -83,47 +77,23 @@ export function resolveConfig(
     DEFAULT_GLOBAL_CONFIG.sync.remoteWrite ??
     false;
 
-  const networkProxy = {
-    policy: local.network?.policy ?? global.network?.policy,
-    allowHosts: normalizeList(local.network?.allowHosts ?? global.network?.allowHosts),
-    blockHosts: normalizeList(local.network?.blockHosts ?? global.network?.blockHosts),
-    allowCidrs: normalizeList(local.network?.allowCidrs ?? global.network?.allowCidrs),
-    blockCidrs: normalizeList(local.network?.blockCidrs ?? global.network?.blockCidrs),
-    bypassHosts: normalizeList(local.network?.bypassHosts ?? global.network?.bypassHosts),
-    bypassCidrs: normalizeList(local.network?.bypassCidrs ?? global.network?.bypassCidrs),
+  const vm = {
+    cpus: local.vm?.cpus ?? global.vm?.cpus ?? DEFAULT_VM_CONFIG.cpus,
+    memory: local.vm?.memory ?? global.vm?.memory ?? DEFAULT_VM_CONFIG.memory,
+    disk: local.vm?.disk ?? global.vm?.disk ?? DEFAULT_VM_CONFIG.disk,
   };
+
+  // Mounts: local overrides global entirely (no merge)
+  const mounts: MountConfig[] = local.mounts ?? global.mounts ?? [];
 
   const startupWaitSec: number =
     local.startupWaitSec ??
     global.defaults?.startupWaitSec ??
     DEFAULT_GLOBAL_CONFIG.defaults.startupWaitSec!;
 
-  const execMode =
-    globalAgent?.execMode ?? agentDefaults.execMode;
-
-  const binary =
-    globalAgent?.binary ?? agentDefaults.binary;
-
-  const defaultArgs =
-    globalAgent?.defaultArgs ?? agentDefaults.defaultArgs ?? [];
-
-  const model =
-    localAgent?.model ?? globalAgent?.model;
-
-  const credentialsEnabled: boolean =
-    localAgent?.credentials?.enabled ??
-    globalAgent?.credentials?.enabled ??
-    true;
-
-  const defaultCredentialFiles: string[] =
-    agent === "codex"
-      ? ["~/.codex/auth.json"]
-      : [];
-
-  const credentialsFiles: string[] =
-    localAgent?.credentials?.files ??
-    globalAgent?.credentials?.files ??
-    defaultCredentialFiles;
+  const binary = globalAgent?.binary ?? agentDefaults.binary;
+  const defaultArgs = globalAgent?.defaultArgs ?? agentDefaults.defaultArgs ?? [];
+  const model = localAgent?.model ?? globalAgent?.model;
 
   const env: Record<string, string> = {
     ...global.env,
@@ -141,25 +111,22 @@ export function resolveConfig(
 
   const workspace = local.workspace!;
   const project = basename(workspace);
-  const sandboxName =
-    localAgent?.sandboxName ?? `${agent}-${project}`;
+  const vmName = localAgent?.vmName ?? `agentbox-${project}`;
 
   return {
     workspace,
-    syncFiles,
     remoteWrite,
-    networkProxy,
+    vm,
+    mounts,
     startupWaitSec,
     env,
     bootstrap: { onCreateScripts, onStartScripts },
     agent: {
       name: agent,
-      execMode,
       binary,
       defaultArgs,
       model,
-      sandboxName,
-      credentials: { enabled: credentialsEnabled, files: credentialsFiles },
+      vmName,
     },
   };
 }

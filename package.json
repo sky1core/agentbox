@@ -1,14 +1,14 @@
 {
   "name": "@sky1core/agentbox",
   "version": "1.0.0",
-  "description": "Docker Sandbox launcher for AI coding agents",
+  "description": "Lima VM launcher for AI coding agents",
   "type": "module",
   "bin": {
     "agentbox": "dist/index.js"
   },
   "scripts": {
     "prebuild": "rm -rf dist",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -17,12 +17,14 @@
     "dist"
   ],
   "keywords": [
-    "docker",
-    "sandbox",
+    "lima",
+    "vm",
     "ai",
     "codex",
     "claude",
-    "gemini"
+    "gemini",
+    "kiro",
+    "copilot"
   ],
   "license": "MIT",
   "engines": {
