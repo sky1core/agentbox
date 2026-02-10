@@ -1,7 +1,7 @@
 import type { ResolvedConfig } from "../config/schema.js";
 import * as lima from "../runtime/lima.js";
 import { runBootstrap } from "../sync/bootstrap.js";
-import { installReadonlyRemote, injectEnvVars, syncKiroCredentials } from "../sync/presets.js";
+import { installReadonlyRemote, injectEnvVars, injectCredentials, syncKiroCredentials } from "../sync/presets.js";
 import { log } from "../utils/logger.js";
 
 function sleep(sec: number): Promise<void> {
@@ -32,6 +32,7 @@ export async function ensureRunning(config: ResolvedConfig): Promise<void> {
     log(`'${vmName}' not found. Creating...`);
     await createAndStart(config);
 
+    injectCredentials(vmName, config.workspace);
     syncKiroCredentials(vmName, config.workspace);
     injectEnvVars(vmName, config.workspace, config.env);
     runBootstrap("onCreate", vmName, config.workspace, config.bootstrap.onCreateScripts, config.env);
@@ -52,6 +53,7 @@ export async function ensureRunning(config: ResolvedConfig): Promise<void> {
     lima.remove(vmName);
     await createAndStart(config);
 
+    injectCredentials(vmName, config.workspace);
     syncKiroCredentials(vmName, config.workspace);
     injectEnvVars(vmName, config.workspace, config.env);
     runBootstrap("onCreate", vmName, config.workspace, config.bootstrap.onCreateScripts, config.env);
@@ -60,7 +62,9 @@ export async function ensureRunning(config: ResolvedConfig): Promise<void> {
     return;
   }
 
-  // Running or Stopped (now restarted) — inject env and run onStart
+  // Running or Stopped (now restarted) — inject credentials and env, run onStart
+  injectCredentials(vmName, config.workspace);
+  syncKiroCredentials(vmName, config.workspace);
   injectEnvVars(vmName, config.workspace, config.env);
   runBootstrap("onStart", vmName, config.workspace, config.bootstrap.onStartScripts, config.env);
   if (!config.remoteWrite) installReadonlyRemote(vmName, config.workspace);

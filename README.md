@@ -5,7 +5,7 @@ AI 코딩 에이전트(Codex, Claude, Kiro, Gemini)를 격리된 Lima VM에서 �
 ## 주요 기능
 
 - **통합 CLI**: `agentbox codex`, `agentbox claude` 한 줄로 VM 생성부터 에이전트 실행까지
-- **홈 디렉토리 자동 마운트**: 호스트의 `~`를 read-only로 마운트하여 모든 자격증명/설정이 VM에서 그대로 사용 가능
+- **최소 권한 크리덴셜 주입**: 에이전트에 필요한 인증 파일만 개별 복사 (`~/.ssh` 등 민감 파일 노출 없음)
 - **승인 없이 자율 동작**: 격리된 VM이므로 에이전트에게 무제한 권한 부여 가능
 - **readonly-remote**: VM에서 git push, PR merge 등 원격 쓰기를 기본 차단 (프로젝트별 해제 가능)
 - **bootstrap 스크립트**: VM 생성/시작 시 MCP 서버 빌드, 패키지 설치 등 자동 실행
@@ -138,7 +138,7 @@ agents:
 | `vm.cpus` | VM CPU 수 | `4` |
 | `vm.memory` | VM 메모리 | `"8GiB"` |
 | `vm.disk` | VM 디스크 | `"20GiB"` |
-| `mounts` | 추가 마운트 설정. 로컬이 글로벌을 완전히 대체 | `[]` |
+| `mounts` | 추가 볼륨 마운트 (아래 참고). 로컬이 글로벌을 완전히 대체 | `[]` |
 | `sync.remoteWrite` | `true`면 git push/merge 허용. `false`면 차단 (readonly-remote) | `false` |
 | `startupWaitSec` | VM 시작 대기 시간(초) | `5` |
 | `bootstrap.onCreateScript` | VM 최초 생성 시 1회 실행할 스크립트 | - |
@@ -146,9 +146,32 @@ agents:
 | `agents.<name>.vmName` | VM 이름 오버라이드 | `agentbox-<디렉토리명>` |
 | `agents.<name>.model` | 에이전트 기본 모델 (글로벌/로컬) | - |
 
-### 자격증명 공유
+### 추가 볼륨 마운트
 
-호스트의 홈 디렉토리(`~`)가 VM에 read-only로 마운트된다. 따라서 에이전트별 자격증명 파일이 별도 설정 없이 VM에서 바로 사용 가능하다.
+`mounts`로 호스트 디렉토리를 VM에 마운트할 수 있다. 읽기/쓰기 모두 지원하며, `mountPoint`로 VM 내부 경로를 별도 지정할 수 있다.
+
+```yaml
+mounts:
+  - location: "~/datasets"           # 호스트 경로
+    mountPoint: "/mnt/datasets"      # VM 내부 경로 (생략 시 호스트와 동일)
+    writable: false                  # 읽기 전용
+
+  - location: "/opt/shared-tools"
+    mountPoint: "/tools"
+    writable: true                   # 쓰기 가능
+```
+
+| 필드 | 설명 | 필수 |
+|------|------|------|
+| `location` | 호스트 경로 (`~` 사용 가능) | O |
+| `mountPoint` | VM 내부 마운트 경로. 생략 시 `location`과 동일 | X |
+| `writable` | `true`: 읽기/쓰기, `false`: 읽기 전용 | X (기본 `false`) |
+
+workspace는 자동으로 writable 마운트되므로 별도 설정 불필요.
+
+### 자격증명 주입
+
+호스트의 에이전트별 자격증명 파일만 `limactl copy`로 VM에 개별 복사한다. `~/.ssh`, `~/.aws` 등 불필요한 민감 파일은 노출되지 않는다.
 
 | 에이전트 | 자격증명 경로 |
 |---------|-------------|
@@ -159,7 +182,7 @@ agents:
 | **GitHub** | `~/.config/gh/` |
 | **Git** | `~/.gitconfig`, `~/.netrc` |
 
-호스트에서 재인증하면 VM에서도 즉시 반영된다.
+VM 시작 시 호스트에서 최신 자격증명이 복사된다.
 
 ### 환경변수 주입
 

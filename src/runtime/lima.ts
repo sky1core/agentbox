@@ -55,7 +55,6 @@ export function listAll(): number {
  * Build a Lima YAML template string from a ResolvedConfig.
  */
 export function buildTemplate(config: ResolvedConfig): string {
-  const home = homedir();
   const lines: string[] = [];
 
   lines.push('vmType: "vz"');
@@ -84,14 +83,10 @@ export function buildTemplate(config: ResolvedConfig): string {
   lines.push("      binfmt: true");
   lines.push("");
 
-  // Mounts — home (ro) BEFORE workspace (rw) so workspace overlays the parent
+  // Mounts — workspace only (credentials are injected via limactl copy, NOT by mounting ~)
   lines.push("mounts:");
 
-  // Home — read-only (covers ~/.netrc, ~/.gitconfig, ~/.codex, ~/.claude, ~/.gemini, ~/.config/gh, etc.)
-  lines.push(`  - location: "~"`);
-  lines.push("    writable: false");
-
-  // Workspace — writable, same absolute path (must come AFTER home to overlay it)
+  // Workspace — writable
   lines.push(`  - location: "${config.workspace}"`);
   lines.push(`    mountPoint: "${config.workspace}"`);
   lines.push("    writable: true");
@@ -177,27 +172,7 @@ export function buildTemplate(config: ResolvedConfig): string {
   lines.push(`      cat > ~/.gemini/settings.json << 'EOF'`);
   lines.push('      {"security":{"auth":{"selectedType":"oauth-personal"}},"tools":{"approvalMode":"auto_edit"}}');
   lines.push("      EOF");
-  lines.push(`      # Link host credentials (mounted read-only at ${home})`);
-  lines.push(`      HOST_HOME="${home}"`);
-  lines.push('      # gitconfig: use include (not symlink) so VM can still write to ~/.gitconfig');
-  lines.push('      [ -f "$HOST_HOME/.gitconfig" ] && git config --global include.path "$HOST_HOME/.gitconfig" || true');
-  lines.push('      [ -f "$HOST_HOME/.netrc" ] && ln -sf "$HOST_HOME/.netrc" ~/.netrc || true');
-  lines.push('      mkdir -p ~/.config');
-  lines.push('      [ -d "$HOST_HOME/.config/gh" ] && ln -sfn "$HOST_HOME/.config/gh" ~/.config/gh || true');
-  lines.push('      # Claude credentials from host (settings.json stays custom)');
-  lines.push('      [ -f "$HOST_HOME/.claude/.credentials.json" ] && ln -sf "$HOST_HOME/.claude/.credentials.json" ~/.claude/.credentials.json || true');
-  lines.push('      # claude.json: COPY (not symlink) because Claude Code writes to it at runtime');
-  lines.push('      [ -f "$HOST_HOME/.claude.json" ] && cp "$HOST_HOME/.claude.json" ~/.claude.json || true');
-  lines.push('      # Codex credentials from host (config.toml stays custom)');
-  lines.push('      [ -f "$HOST_HOME/.codex/auth.json" ] && ln -sf "$HOST_HOME/.codex/auth.json" ~/.codex/auth.json || true');
-  lines.push('      # Gemini credentials from host (COPY writable files, symlink read-only ones)');
-  lines.push('      for f in google_account_id google_accounts.json installation_id; do');
-  lines.push('        [ -f "$HOST_HOME/.gemini/$f" ] && ln -sf "$HOST_HOME/.gemini/$f" ~/.gemini/"$f" || true');
-  lines.push('      done');
-  lines.push('      # oauth_creds.json and state.json: COPY because Gemini writes to them at runtime');
-  lines.push('      for f in oauth_creds.json state.json; do');
-  lines.push('        [ -f "$HOST_HOME/.gemini/$f" ] && cp "$HOST_HOME/.gemini/$f" ~/.gemini/"$f" || true');
-  lines.push('      done');
+  lines.push('      # Credentials are injected at runtime via limactl copy (not via ~ mount)');
   lines.push("");
 
   return lines.join("\n") + "\n";

@@ -159,6 +159,59 @@ export function syncKiroCredentials(vmName: string, workspace: string): void {
 }
 
 /**
+ * Copy specific credential files from host to VM.
+ * Only the minimum required files are injected — NOT the entire home directory.
+ */
+export function injectCredentials(vmName: string, workspace: string): void {
+  const home = homedir();
+
+  const creds: { hostPath: string; vmDest: string }[] = [
+    { hostPath: join(home, ".gitconfig"), vmDest: ".host-gitconfig" },
+    { hostPath: join(home, ".netrc"), vmDest: ".netrc" },
+    { hostPath: join(home, ".claude", ".credentials.json"), vmDest: ".claude/.credentials.json" },
+    { hostPath: join(home, ".claude.json"), vmDest: ".claude.json" },
+    { hostPath: join(home, ".codex", "auth.json"), vmDest: ".codex/auth.json" },
+    { hostPath: join(home, ".config", "gh", "hosts.yml"), vmDest: ".config/gh/hosts.yml" },
+    { hostPath: join(home, ".config", "gh", "config.yml"), vmDest: ".config/gh/config.yml" },
+  ];
+  for (const f of ["oauth_creds.json", "state.json", "google_account_id", "google_accounts.json", "installation_id"]) {
+    creds.push({ hostPath: join(home, ".gemini", f), vmDest: `.gemini/${f}` });
+  }
+
+  const existing = creds.filter((c) => existsSync(c.hostPath));
+  if (existing.length === 0) return;
+
+  log("injecting credentials");
+
+  // Stage files in VM temp dir
+  lima.shellNonInteractive(vmName, workspace, [
+    "sh", "-c", "rm -rf /tmp/agentbox-creds && mkdir -p /tmp/agentbox-creds",
+  ]);
+  for (const c of existing) {
+    const tmpName = c.vmDest.replace(/\//g, "__");
+    lima.copyToVm(vmName, c.hostPath, `/tmp/agentbox-creds/${tmpName}`);
+  }
+
+  // Move all to home in one shell call
+  const moveCommands = existing.map((c) => {
+    const tmpName = c.vmDest.replace(/\//g, "__");
+    return `mkdir -p "$(dirname "$HOME/${c.vmDest}")" && mv "/tmp/agentbox-creds/${tmpName}" "$HOME/${c.vmDest}"`;
+  });
+  moveCommands.push("rm -rf /tmp/agentbox-creds");
+  lima.shellNonInteractive(vmName, workspace, ["sh", "-c", moveCommands.join(" && ")]);
+
+  // gitconfig: include host config
+  lima.shellNonInteractive(vmName, workspace, [
+    "sh", "-c", '[ -f "$HOME/.host-gitconfig" ] && git config --global include.path "$HOME/.host-gitconfig" || true',
+  ]);
+
+  // gh auth setup-git
+  lima.shellNonInteractive(vmName, workspace, [
+    "sh", "-c", "command -v gh >/dev/null 2>&1 && gh auth setup-git 2>/dev/null || true",
+  ]);
+}
+
+/**
  * Write environment variables to /etc/sandbox-persistent.sh inside the VM.
  * This makes env vars available to shell sessions and scripts.
  */

@@ -132,12 +132,20 @@ limactl shell --workdir <workspace> <vmName> -- env K=V <binary> <args>
 - vmType: `vz` (macOS Virtualization.Framework)
 - 이미지: Ubuntu 24.04 LTS (arm64 + amd64)
 - Rosetta: 활성화 (Apple Silicon x86 호환)
-- 마운트: workspace (writable) + `~` (read-only) + 사용자 추가 마운트
+- 마운트: workspace (writable) + 사용자 추가 마운트 (홈 디렉토리는 마운트하지 않음)
 - provision: 시스템 패키지(git, docker, Node.js, gh) 자동 설치
 
-### 자격증명 마운트
+### 자격증명 주입 (최소 권한)
 
-호스트의 `~`가 VM에 read-only로 마운트되므로, 에이전트별 자격증명 파일(`~/.codex/`, `~/.claude/`, `~/.gemini/`, `~/.config/gh/`, `~/.netrc`, `~/.gitconfig` 등)이 별도 복사 없이 VM에서 바로 사용 가능하다. 호스트에서 재인증하면 VM에서도 즉시 반영.
+호스트의 `~`는 마운트하지 **않는다** (`~/.ssh`, `~/.aws` 등 민감 파일 격리). 에이전트에 필요한 자격증명만 `limactl copy`로 개별 복사한다:
+
+- `.gitconfig`, `.netrc` — git 설정/인증
+- `.claude/.credentials.json`, `.claude.json` — Claude Code
+- `.codex/auth.json` — Codex
+- `.gemini/*` — Gemini (oauth_creds, state 등)
+- `.config/gh/hosts.yml` — GitHub CLI
+
+`src/sync/presets.ts`의 `injectCredentials()`에서 관리. VM 시작 시마다 호스트에서 최신 자격증명을 복사한다.
 
 ### 부트스트랩 스크립트 (`bootstrap`) -- entrypoint 역할
 

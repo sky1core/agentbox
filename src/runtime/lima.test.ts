@@ -32,10 +32,9 @@ describe("buildTemplate", () => {
     expect(yaml).toContain("writable: true");
   });
 
-  it("includes home directory as read-only mount", () => {
+  it("does NOT mount home directory (credentials injected via limactl copy)", () => {
     const yaml = buildTemplate(makeConfig());
-    expect(yaml).toContain('location: "~"');
-    expect(yaml).toContain("writable: false");
+    expect(yaml).not.toContain('location: "~"');
   });
 
   it("includes rosetta config", () => {
