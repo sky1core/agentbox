@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { buildTemplate } from "./lima.js";
 import type { ResolvedConfig } from "../config/schema.js";
 
@@ -8,8 +8,9 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
     remoteWrite: false,
     vm: { cpus: 4, memory: "8GiB", disk: "50GiB" },
     mounts: [],
-    startupWaitSec: 5,
+    startupWaitSec: 30,
     env: {},
+    caCerts: "",
     bootstrap: { onCreateScripts: [], onStartScripts: [] },
     agent: {
       name: "codex",
@@ -88,4 +89,41 @@ describe("buildTemplate", () => {
     expect(yaml).toContain('sandbox_mode = "danger-full-access"');
     expect(yaml).toContain("auto_edit");
   });
+
+  it("omits caCerts section when no certs provided", () => {
+    const yaml = buildTemplate(makeConfig({ caCerts: "" }));
+    expect(yaml).not.toContain("caCerts:");
+    expect(yaml).not.toContain("NODE_EXTRA_CA_CERTS");
+  });
+
+  it("includes caCerts section when certs are provided", () => {
+    const cert = "-----BEGIN CERTIFICATE-----\nMIIC1TCCAb0=\n-----END CERTIFICATE-----\n";
+    const yaml = buildTemplate(makeConfig({ caCerts: cert }));
+    expect(yaml).toContain("caCerts:");
+    expect(yaml).toContain("certs:");
+    expect(yaml).toContain("-----BEGIN CERTIFICATE-----");
+    expect(yaml).toContain("MIIC1TCCAb0=");
+    expect(yaml).toContain("-----END CERTIFICATE-----");
+  });
+
+  it("includes NODE_EXTRA_CA_CERTS in provision when caCerts provided", () => {
+    const cert = "-----BEGIN CERTIFICATE-----\nMIIC1TCCAb0=\n-----END CERTIFICATE-----\n";
+    const yaml = buildTemplate(makeConfig({ caCerts: cert }));
+    expect(yaml).toContain("NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt");
+    expect(yaml).toContain("/etc/profile.d/node-ca-certs.sh");
+  });
+
+  it("handles multiple caCert blocks", () => {
+    const certs = [
+      "-----BEGIN CERTIFICATE-----\nAAA=\n-----END CERTIFICATE-----",
+      "-----BEGIN CERTIFICATE-----\nBBB=\n-----END CERTIFICATE-----",
+    ].join("\n") + "\n";
+    const yaml = buildTemplate(makeConfig({ caCerts: certs }));
+    expect(yaml).toContain("AAA=");
+    expect(yaml).toContain("BBB=");
+    // Each cert should be a separate list item
+    const matches = yaml.match(/- \|/g);
+    expect(matches).toHaveLength(2);
+  });
 });
+

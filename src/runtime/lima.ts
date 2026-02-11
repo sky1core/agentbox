@@ -83,6 +83,21 @@ export function buildTemplate(config: ResolvedConfig): string {
   lines.push("      binfmt: true");
   lines.push("");
 
+  // CA Certificates (injected before provision so HTTPS works in provision scripts)
+  if (config.caCerts) {
+    lines.push("caCerts:");
+    lines.push("  certs:");
+    // Split PEM into individual cert blocks; each becomes a YAML block scalar list item
+    const certBlocks = config.caCerts.split(/(?=-----BEGIN CERTIFICATE-----)/).filter((b) => b.trim());
+    for (const block of certBlocks) {
+      lines.push("    - |");
+      for (const line of block.trim().split("\n")) {
+        lines.push(`      ${line}`);
+      }
+    }
+    lines.push("");
+  }
+
   // Mounts — workspace only (credentials are injected via limactl copy, NOT by mounting ~)
   lines.push("mounts:");
 
@@ -106,6 +121,11 @@ export function buildTemplate(config: ResolvedConfig): string {
   lines.push("      #!/bin/bash");
   lines.push("      set -eux -o pipefail");
   lines.push("      export DEBIAN_FRONTEND=noninteractive");
+  if (config.caCerts) {
+    // Make NODE_EXTRA_CA_CERTS available for all provision phases and runtime
+    lines.push('      export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt');
+    lines.push('      echo \'export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt\' > /etc/profile.d/node-ca-certs.sh');
+  }
   lines.push("      apt-get update");
   lines.push("      apt-get install -y curl git build-essential unzip jq docker.io");
   lines.push("      # Add the Lima guest user to docker group (resolve inside VM)");
@@ -119,6 +139,9 @@ export function buildTemplate(config: ResolvedConfig): string {
   lines.push("    script: |");
   lines.push("      #!/bin/bash");
   lines.push("      set -eux -o pipefail");
+  if (config.caCerts) {
+    lines.push('      export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt');
+  }
   lines.push("      # Node.js LTS via NodeSource");
   lines.push("      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -");
   lines.push("      apt-get install -y nodejs");
@@ -135,6 +158,9 @@ export function buildTemplate(config: ResolvedConfig): string {
   lines.push("    script: |");
   lines.push("      #!/bin/bash");
   lines.push("      set -eux -o pipefail");
+  if (config.caCerts) {
+    lines.push('      export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt');
+  }
   lines.push("      npm install -g @anthropic-ai/claude-code || true");
   lines.push("      npm install -g @openai/codex || true");
   lines.push("      npm install -g @google/gemini-cli || true");
@@ -317,4 +343,21 @@ export function copyToVm(
     hostPath,
     `${vmName}:${vmPath}`,
   ]);
+}
+
+/**
+ * Poll SSH readiness by running `true` inside the VM.
+ * Returns as soon as SSH is ready, or after timeout (does not throw).
+ */
+export async function waitForSsh(vmName: string, timeoutSec: number): Promise<void> {
+  const deadline = Date.now() + timeoutSec * 1000;
+  const pollIntervalMs = 1000;
+
+  while (Date.now() < deadline) {
+    const result = execCapture("limactl", ["shell", vmName, "--", "true"]);
+    if (result.status === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  log(`SSH readiness timeout after ${timeoutSec}s (continuing anyway)`);
 }

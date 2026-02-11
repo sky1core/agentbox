@@ -17,7 +17,7 @@ export const DEFAULT_GLOBAL_CONFIG: Required<
   Pick<GlobalConfig, "sync" | "defaults">
 > & { agents: Record<AgentName, AgentGlobalConfig> } = {
   sync: { remoteWrite: false },
-  defaults: { startupWaitSec: 5 },
+  defaults: { startupWaitSec: 30 },
   agents: AGENT_DEFAULTS,
 };
 

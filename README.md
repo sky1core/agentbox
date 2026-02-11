@@ -76,7 +76,7 @@ vm:
   disk: "20GiB"
 
 defaults:
-  startupWaitSec: 5
+  startupWaitSec: 30
 
 env:
   CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-xxx..."   # Claude Code 인증 토큰
@@ -110,7 +110,7 @@ mounts:
     mountPoint: "/home/user/data"
     writable: false
 
-startupWaitSec: 3
+startupWaitSec: 10
 
 env:                            # 로컬 env는 글로벌을 키 단위로 오버라이드
   MY_PROJECT_KEY: "value"
@@ -129,7 +129,7 @@ agents:
 2. 글로벌 config (`~/.config/agentbox/config.yml`)
 3. **로컬 config (`agentbox.yml`)** (가장 높음)
 
-예시: 글로벌에서 `startupWaitSec: 10`으로 설정해도, 로컬 `agentbox.yml`에서 `startupWaitSec: 3`이면 **3이 적용**된다.
+예시: 글로벌에서 `startupWaitSec: 30`으로 설정해도, 로컬 `agentbox.yml`에서 `startupWaitSec: 10`이면 **10이 적용**된다.
 
 | 필드 | 설명 | 기본값 |
 |------|------|--------|
@@ -140,7 +140,8 @@ agents:
 | `vm.disk` | VM 디스크 | `"20GiB"` |
 | `mounts` | 추가 볼륨 마운트 (아래 참고). 로컬이 글로벌을 완전히 대체 | `[]` |
 | `sync.remoteWrite` | `true`면 git push/merge 허용. `false`면 차단 (readonly-remote) | `false` |
-| `startupWaitSec` | VM 시작 대기 시간(초) | `5` |
+| `startupWaitSec` | SSH readiness timeout(초). polling 방식으로 즉시 반환 | `30` |
+| `caCert` | 커스텀 CA 인증서 PEM 파일 경로 (회사 프록시용) | - |
 | `bootstrap.onCreateScript` | VM 최초 생성 시 1회 실행할 스크립트 | - |
 | `bootstrap.onStartScript` | VM 시작 시마다 실행할 스크립트 | - |
 | `agents.<name>.vmName` | VM 이름 오버라이드 | `agentbox-<디렉토리명>` |

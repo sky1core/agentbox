@@ -45,6 +45,7 @@ export interface GlobalConfig {
   };
   env?: Record<string, string>;
   bootstrap?: BootstrapConfig;
+  caCert?: string;
   agents?: Partial<Record<AgentName, AgentGlobalConfig>>;
 }
 
@@ -63,6 +64,7 @@ export interface LocalConfig {
   startupWaitSec?: number;
   env?: Record<string, string>;
   bootstrap?: BootstrapConfig;
+  caCert?: string;
   agents?: Partial<Record<AgentName, AgentLocalConfig>>;
 }
 
@@ -73,6 +75,7 @@ export interface ResolvedConfig {
   mounts: MountConfig[];
   startupWaitSec: number;
   env: Record<string, string>;
+  caCerts: string;
   bootstrap: {
     onCreateScripts: string[];
     onStartScripts: string[];

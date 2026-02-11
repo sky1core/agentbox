@@ -72,7 +72,7 @@ function printUsage(): void {
     "",
     "Config keys (YAML):",
     "  workspace: <path>                       # defaults to agentbox.yml dir or $PWD",
-    "  startupWaitSec: <sec>                   # VM startup wait (default: 5)",
+    "  startupWaitSec: <sec>                   # SSH readiness timeout (default: 30)",
     "  vm: { cpus, memory, disk }              # Lima VM resources (default: 4, 8GiB, 50GiB)",
     "  mounts: [{ location, mountPoint, writable }]  # additional host dirs to mount",
     "  sync.remoteWrite: true|false            # allow git push (default: false = blocked)",
@@ -81,6 +81,7 @@ function printUsage(): void {
     "  bootstrap.onStartScript:  <path|[...]>  # runs every VM start",
     "  agents.<agent>.vmName: <name>           # override VM name",
     "  agents.<agent>.model: <model>           # default model for agent",
+    "  caCert: /path/to/cert.pem               # custom CA cert for corporate proxy",
     "  agents.<agent>.binary/defaultArgs       # global only",
     "",
     "Credentials (auto-injected via limactl copy — host ~ is NOT mounted):",
@@ -125,7 +126,9 @@ const LOCAL_TEMPLATE = `# agentbox.yml — project-level config
 # env:
 #   MY_VAR: "value"
 
-# startupWaitSec: 5
+# startupWaitSec: 30
+
+# caCert: /path/to/corporate-ca.pem  # custom CA cert for HTTPS proxy
 
 # bootstrap:
 #   onCreateScript: ./scripts/setup.sh
@@ -150,7 +153,9 @@ const GLOBAL_TEMPLATE = `# ~/.config/agentbox/config.yml — global config (appl
 #   CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-xxx..."
 
 # defaults:
-#   startupWaitSec: 5
+#   startupWaitSec: 30
+
+# caCert: /path/to/corporate-ca.pem  # custom CA cert for HTTPS proxy
 
 # agents:
 #   codex:

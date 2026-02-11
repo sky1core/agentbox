@@ -10,6 +10,7 @@ import type {
   ResolvedConfig,
 } from "./schema.js";
 import { DEFAULT_GLOBAL_CONFIG, DEFAULT_VM_CONFIG, getAgentDefaults } from "./defaults.js";
+import { collectCACerts } from "../runtime/certs.js";
 
 const GLOBAL_CONFIG_PATH = join(
   homedir(),
@@ -100,6 +101,16 @@ export function resolveConfig(
     ...local.env,
   };
 
+  const caCertPath = local.caCert ?? global.caCert;
+  const caCerts = collectCACerts(caCertPath);
+
+  // If custom CA certs are present, ensure NODE_EXTRA_CA_CERTS is set at runtime.
+  // /etc/profile.d/ is not sourced by non-login SSH shells (shellInteractive, shellNonInteractive),
+  // so we inject it into env to flow through envArgs and sandbox-persistent.sh.
+  if (caCerts && !env.NODE_EXTRA_CA_CERTS) {
+    env.NODE_EXTRA_CA_CERTS = "/etc/ssl/certs/ca-certificates.crt";
+  }
+
   const onCreateScripts = [
     ...normalizeScripts(global.bootstrap?.onCreateScript),
     ...normalizeScripts(local.bootstrap?.onCreateScript),
@@ -120,6 +131,7 @@ export function resolveConfig(
     mounts,
     startupWaitSec,
     env,
+    caCerts,
     bootstrap: { onCreateScripts, onStartScripts },
     agent: {
       name: agent,

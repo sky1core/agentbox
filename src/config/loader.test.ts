@@ -1,4 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// Mock certs module to isolate loader tests from host OS (macOS auto-detect)
+vi.mock("../runtime/certs.js", () => ({
+  collectCACerts: vi.fn().mockReturnValue(""),
+}));
+
 import { resolveConfig } from "./loader.js";
 import type { GlobalConfig, LocalConfig } from "./schema.js";
 
@@ -10,7 +16,7 @@ describe("resolveConfig", () => {
   it("uses hardcoded defaults when no global config", () => {
     const config = resolveConfig("codex", minimalLocal, {});
     expect(config.workspace).toBe("/home/user/work/my-project");
-    expect(config.startupWaitSec).toBe(5);
+    expect(config.startupWaitSec).toBe(30);
     expect(config.agent.name).toBe("codex");
     expect(config.agent.binary).toBe("codex");
     expect(config.agent.vmName).toBe("agentbox-my-project");

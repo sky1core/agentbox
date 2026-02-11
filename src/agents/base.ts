@@ -4,10 +4,6 @@ import { runBootstrap } from "../sync/bootstrap.js";
 import { installReadonlyRemote, injectEnvVars, injectCredentials, syncKiroCredentials } from "../sync/presets.js";
 import { log } from "../utils/logger.js";
 
-function sleep(sec: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, sec * 1000));
-}
-
 /**
  * Create and start a new VM. Returns after VM is Running.
  */
@@ -31,7 +27,7 @@ async function createAndStart(config: ResolvedConfig): Promise<void> {
   const secondStart = lima.start(vmName);
   if (secondStart !== 0) throw new Error(`failed to start VM '${vmName}' (exit=${secondStart})`);
 
-  await sleep(config.startupWaitSec);
+  await lima.waitForSsh(vmName, config.startupWaitSec);
 }
 
 export async function ensureRunning(config: ResolvedConfig): Promise<void> {
@@ -55,7 +51,7 @@ export async function ensureRunning(config: ResolvedConfig): Promise<void> {
     log(`starting ${vmName}...`);
     const code = lima.start(vmName);
     if (code !== 0) throw new Error(`failed to start VM '${vmName}' (exit=${code})`);
-    await sleep(config.startupWaitSec);
+    await lima.waitForSsh(vmName, config.startupWaitSec);
   }
 
   if (state === "Broken") {

@@ -58,7 +58,8 @@ src/
     loader.ts               # YAML 탐색, 파싱, 병합
     defaults.ts             # 기본값 (에이전트별 binary/defaultArgs)
   runtime/
-    lima.ts                 # limactl CLI 래퍼 (create/start/stop/shell/list/copy)
+    lima.ts                 # limactl CLI 래퍼 (create/start/stop/shell/list/copy/waitForSsh)
+    certs.ts                # CA 인증서 수집 (macOS System Keychain 자동감지 + caCert + NODE_EXTRA_CA_CERTS)
   agents/
     types.ts                # COMMON_COMMANDS 정의
     base.ts                 # ensureRunning (VM 상태 확인/생성/시작)
@@ -126,6 +127,7 @@ limactl shell --workdir <workspace> <vmName> -- env K=V <binary> <args>
 | `shellNonInteractive()` | 동일 | 비인터랙티브 명령 실행 |
 | `shellCapture()` | 동일 | 명령 실행 + stdout 캡처 |
 | `copyToVm()` | `limactl copy host:file X:dest` | 호스트 -> VM 파일 복사 |
+| `waitForSsh()` | `limactl shell X -- true` (polling) | SSH 준비 대기 (timeout 시 warning 후 계속) |
 
 ### VM 템플릿 생성 (`buildTemplate()`)
 
@@ -134,8 +136,9 @@ limactl shell --workdir <workspace> <vmName> -- env K=V <binary> <args>
 - vmType: `vz` (macOS Virtualization.Framework)
 - 이미지: Ubuntu 24.04 LTS (arm64 + amd64)
 - Rosetta: 활성화 (Apple Silicon x86 호환)
+- caCerts: CA 인증서 자동 주입 (macOS System Keychain 자동감지 + config `caCert` + `NODE_EXTRA_CA_CERTS`)
 - 마운트: workspace (writable) + 사용자 추가 마운트 (홈 디렉토리는 마운트하지 않음)
-- provision: 시스템 패키지(git, docker, Node.js, gh) 자동 설치
+- provision: 시스템 패키지(git, docker, Node.js, gh) 자동 설치 + `NODE_EXTRA_CA_CERTS` 설정 (CA cert 있을 때)
 
 ### 자격증명 주입 (최소 권한)
 
@@ -184,9 +187,10 @@ vm:
   memory: "8GiB"
   disk: "50GiB"
 defaults:
-  startupWaitSec: 5
+  startupWaitSec: 30
 env:
   CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-xxx..."
+caCert: /path/to/corporate-ca.pem  # 커스텀 CA (회사 프록시용, 선택)
 agents:
   codex:
     binary: codex
@@ -202,7 +206,7 @@ vm:
 mounts:
   - location: "~/extra-data"
     writable: false
-startupWaitSec: 3
+startupWaitSec: 30
 env:
   MY_VAR: "value"             # 로컬이 글로벌을 키 단위로 오버라이드
 agents:
@@ -221,6 +225,7 @@ agents:
 | `env` | 키 단위 머지 (global -> local override) |
 | `mounts` | 로컬이 글로벌을 완전히 대체 |
 | `bootstrap` scripts | concat (global then local) |
+| `caCert` | 로컬 우선 |
 | 그 외 | 로컬 우선 |
 
 ## 이슈 관리
