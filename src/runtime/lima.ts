@@ -249,14 +249,20 @@ export function remove(vmName: string): number {
 }
 
 /**
- * Build env args for `limactl shell -- env K=V ... cmd`.
- * Always prepends ~/.local/bin to PATH so readonly-remote wrappers
- * (git, gh) are found in both interactive and non-interactive sessions.
- * Shell variables ($HOME, $PATH) are expanded by the remote bash via SSH.
+ * Build a shell command that sets env vars and execs the given command.
+ * Wraps in `sh -c '...'` so that $HOME/$PATH are expanded by the remote shell.
+ * (`limactl shell -- env K=V` does NOT go through a shell, so variable
+ * references like $PATH are passed as literals and break PATH.)
  */
-function envArgs(env: Record<string, string>): string[] {
-  const entries = Object.entries(env);
-  return ["env", "PATH=$HOME/.local/bin:$PATH", ...entries.map(([k, v]) => `${k}=${v}`)];
+export function buildShellCmd(command: string[], env: Record<string, string>): string[] {
+  const exports = Object.entries(env).map(([k, v]) => `export ${k}='${v.replace(/'/g, "'\\''")}'`);
+  const escaped = command.map((c) => `'${c.replace(/'/g, "'\\''")}'`).join(" ");
+  const parts = [
+    `export PATH="$HOME/.local/bin:$PATH"`,
+    ...exports,
+    `exec ${escaped}`,
+  ];
+  return ["sh", "-c", parts.join(" && ")];
 }
 
 /**
@@ -273,10 +279,12 @@ export function shellInteractive(
   const sshConfig = join(homedir(), ".lima", vmName, "ssh.config");
   const sshHost = `lima-${vmName}`;
 
-  // Build remote command: source env + cd + exec
+  // Build remote command: env + source persistent + cd + exec
+  const exports = Object.entries(env).map(([k, v]) => `export ${k}='${v.replace(/'/g, "'\\''")}'`);
   const escaped = command.map((c) => `'${c.replace(/'/g, "'\\''")}'`).join(" ");
   const parts = [
     `export PATH="$HOME/.local/bin:$PATH"`,
+    ...exports,
     `. /etc/sandbox-persistent.sh 2>/dev/null || true`,
     `cd '${workdir.replace(/'/g, "'\\''")}'`,
     `exec ${escaped}`,
@@ -306,8 +314,7 @@ export function shellNonInteractive(
     "--workdir", workdir,
     vmName,
     "--",
-    ...envArgs(env),
-    ...command,
+    ...buildShellCmd(command, env),
   ]);
 }
 
@@ -325,8 +332,7 @@ export function shellCapture(
     "--workdir", workdir,
     vmName,
     "--",
-    ...envArgs(env),
-    ...command,
+    ...buildShellCmd(command, env),
   ]);
 }
 

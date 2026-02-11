@@ -106,7 +106,7 @@ export function resolveConfig(
 
   // If custom CA certs are present, ensure NODE_EXTRA_CA_CERTS is set at runtime.
   // /etc/profile.d/ is not sourced by non-login SSH shells (shellInteractive, shellNonInteractive),
-  // so we inject it into env to flow through envArgs and sandbox-persistent.sh.
+  // so we inject it into env to flow through buildShellCmd and sandbox-persistent.sh.
   if (caCerts && !env.NODE_EXTRA_CA_CERTS) {
     env.NODE_EXTRA_CA_CERTS = "/etc/ssl/certs/ca-certificates.crt";
   }
