@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { homedir, platform } from "node:os";
 import { execCapture } from "../utils/process.js";
 
@@ -45,7 +45,7 @@ function parseLabels(output: string): string[] {
 }
 
 function isAppleDefault(label: string): boolean {
-  return label.startsWith("com.apple.") || label.includes("Apple");
+  return label.startsWith("com.apple.") || label.startsWith("Apple ");
 }
 
 /**

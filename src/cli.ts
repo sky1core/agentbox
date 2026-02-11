@@ -230,6 +230,18 @@ function updateYamlConfig(path: string, key: string, value: string): void {
   writeFileSync(path, lines.join("\n"), "utf-8");
 }
 
+function ensureGitignore(dir: string, entry: string): void {
+  const gitignorePath = join(dir, ".gitignore");
+  if (existsSync(gitignorePath)) {
+    const content = readFileSync(gitignorePath, "utf-8");
+    if (content.split("\n").some((line) => line.trim() === entry)) return;
+    writeFileSync(gitignorePath, content.trimEnd() + "\n" + entry + "\n", "utf-8");
+  } else {
+    writeFileSync(gitignorePath, entry + "\n", "utf-8");
+  }
+  log(`${gitignorePath} 에 ${entry} 추가`);
+}
+
 async function runCa(args: string[]): Promise<void> {
   const sub = args[0]; // "add", "ls", or undefined
 
@@ -306,6 +318,7 @@ async function runCa(args: string[]): Promise<void> {
       updateYamlConfig(configPath, "caCert", certPath);
       log(`${certPath} 저장`);
       log(`${configPath} 에 caCert 설정 추가`);
+      ensureGitignore(workspace, "agentbox-ca.pem");
     }
 
     console.log(`\n추가된 인증서: ${selected.map((c) => c.label).join(", ")}`);
