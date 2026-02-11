@@ -263,7 +263,7 @@ async function runCa(args: string[]): Promise<void> {
     return;
   }
 
-  if (sub === "add" || !sub) {
+  if (sub === "add" || !sub || sub === "--global") {
     const isGlobal = args.includes("--global");
     const certs = listCustomKeychainCerts();
 
