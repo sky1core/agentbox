@@ -142,9 +142,11 @@ export function buildTemplate(config: ResolvedConfig): string {
   if (config.caCerts) {
     lines.push('      export NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt');
   }
-  lines.push("      # Node.js LTS via NodeSource");
-  lines.push("      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -");
-  lines.push("      apt-get install -y nodejs");
+  lines.push("      # Node.js 22 LTS — official binary from nodejs.org");
+  lines.push("      NODE_VER=v22.22.0");
+  lines.push('      ARCH=$(dpkg --print-architecture)');
+  lines.push('      if [ "$ARCH" = "arm64" ]; then NODE_ARCH=arm64; else NODE_ARCH=x64; fi');
+  lines.push('      curl -fsSL "https://nodejs.org/dist/${NODE_VER}/node-${NODE_VER}-linux-${NODE_ARCH}.tar.xz" | tar -xJ -C /usr/local --strip-components=1');
   lines.push("      # gh CLI");
   lines.push("      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg");
   lines.push('      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list');
