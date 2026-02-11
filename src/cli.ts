@@ -1,11 +1,13 @@
-import { existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import type { AgentName, ResolvedConfig } from "./config/schema.js";
 import { isValidAgent, VALID_AGENTS } from "./config/schema.js";
-import { loadLocalConfig, loadGlobalConfig, resolveConfig } from "./config/loader.js";
+import { loadLocalConfig, loadGlobalConfig, resolveConfig, findLocalConfigPath } from "./config/loader.js";
 import { ensureRunning } from "./agents/base.js";
 import { COMMON_COMMANDS } from "./agents/types.js";
+import { listCustomKeychainCerts, saveCertFile } from "./runtime/certs.js";
 import * as lima from "./runtime/lima.js";
 import { log, error } from "./utils/logger.js";
 
@@ -39,6 +41,7 @@ function printUsage(): void {
   const lines = [
     "Usage:",
     "  agentbox init [--global]         # generate config template",
+    "  agentbox ca [add [--global]|ls]  # manage CA certs for corporate proxy",
     "  agentbox ls|stop|rm|shell        # VM-level commands (no agent needed)",
     "  agentbox <agent>                 # interactive (no args)",
     "  agentbox <agent> <args...>       # passthrough to the agent CLI",
@@ -188,6 +191,132 @@ function runInit(args: string[]): void {
   }
 }
 
+function prompt(question: string): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+/**
+ * Update a single top-level key in a YAML file, preserving comments and formatting.
+ * If the key already exists, replaces that line. Otherwise appends to the end.
+ */
+function updateYamlConfig(path: string, key: string, value: string): void {
+  if (!existsSync(path)) {
+    const dir = dirname(path);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    writeFileSync(path, `${key}: ${JSON.stringify(value)}\n`, "utf-8");
+    return;
+  }
+
+  const content = readFileSync(path, "utf-8");
+  const lines = content.split("\n");
+  // Match top-level key (no leading whitespace)
+  const keyRegex = new RegExp(`^${key}\\s*:`);
+  const idx = lines.findIndex((line) => keyRegex.test(line));
+
+  if (idx !== -1) {
+    lines[idx] = `${key}: ${JSON.stringify(value)}`;
+  } else {
+    // Append before trailing empty lines
+    let insertAt = lines.length;
+    while (insertAt > 0 && lines[insertAt - 1].trim() === "") insertAt--;
+    lines.splice(insertAt, 0, `${key}: ${JSON.stringify(value)}`);
+  }
+  writeFileSync(path, lines.join("\n"), "utf-8");
+}
+
+async function runCa(args: string[]): Promise<void> {
+  const sub = args[0]; // "add", "ls", or undefined
+
+  if (sub === "ls") {
+    // Show currently configured certs
+    const local = loadLocalConfig(process.cwd());
+    const global = loadGlobalConfig();
+    const localCert = local?.caCert;
+    const globalCert = global.caCert;
+
+    if (!localCert && !globalCert) {
+      console.log("설정된 CA 인증서 없음");
+      console.log("  agentbox ca add       로컬 config에 추가");
+      console.log("  agentbox ca add --global  글로벌 config에 추가");
+    } else {
+      if (globalCert) console.log(`글로벌: ${globalCert}`);
+      if (localCert) console.log(`로컬:   ${localCert}`);
+    }
+    return;
+  }
+
+  if (sub === "add" || !sub) {
+    const isGlobal = args.includes("--global");
+    const certs = listCustomKeychainCerts();
+
+    if (certs.length === 0) {
+      error("System Keychain에서 커스텀 인증서를 찾을 수 없습니다");
+      console.log("macOS가 아니거나, 사내 CA가 System Keychain에 설치되지 않았습니다.");
+      console.log("수동 지정: config에 caCert: /path/to/cert.pem 설정");
+      process.exit(1);
+    }
+
+    console.log("\nSystem Keychain 인증서 (Apple 기본 제외):\n");
+    for (let i = 0; i < certs.length; i++) {
+      console.log(`  ${i + 1}. ${certs[i].label}`);
+    }
+    console.log("");
+
+    const answer = await prompt(
+      certs.length === 1
+        ? "추가할 인증서 (Enter=전체, q=취소): "
+        : "추가할 번호 (쉼표 구분, Enter=전체, q=취소): ",
+    );
+
+    if (answer === "q") {
+      console.log("취소됨");
+      return;
+    }
+
+    let selected: typeof certs;
+    if (!answer) {
+      selected = certs;
+    } else {
+      const indices = answer.split(",").map((s) => parseInt(s.trim(), 10) - 1);
+      selected = indices.filter((i) => i >= 0 && i < certs.length).map((i) => certs[i]);
+      if (selected.length === 0) {
+        error("유효한 번호가 없습니다");
+        process.exit(1);
+      }
+    }
+
+    // Determine workspace for local config
+    const workspace = loadLocalConfig(process.cwd())?.workspace ?? process.cwd();
+    const certPath = saveCertFile(selected, isGlobal, workspace);
+
+    // Update config file
+    if (isGlobal) {
+      const configPath = join(homedir(), ".config", "agentbox", "config.yml");
+      updateYamlConfig(configPath, "caCert", certPath);
+      log(`${certPath} 저장`);
+      log(`${configPath} 에 caCert 설정 추가`);
+    } else {
+      const configPath = findLocalConfigPath(process.cwd()) ?? join(process.cwd(), "agentbox.yml");
+      updateYamlConfig(configPath, "caCert", certPath);
+      log(`${certPath} 저장`);
+      log(`${configPath} 에 caCert 설정 추가`);
+    }
+
+    console.log(`\n추가된 인증서: ${selected.map((c) => c.label).join(", ")}`);
+    return;
+  }
+
+  error(`unknown ca command: ${sub}`);
+  console.log("사용법: agentbox ca [add [--global] | ls]");
+  process.exit(1);
+}
+
 function agentDescription(agent: AgentName): string {
   const descriptions: Record<AgentName, string> = {
     codex: "OpenAI Codex CLI",
@@ -213,6 +342,11 @@ export async function run(argv: string[]): Promise<void> {
 
   if (args[0] === "init") {
     runInit(args.slice(1));
+    process.exit(0);
+  }
+
+  if (args[0] === "ca") {
+    await runCa(args.slice(1));
     process.exit(0);
   }
 

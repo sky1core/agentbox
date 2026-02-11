@@ -1,9 +1,15 @@
-import { readFileSync } from "node:fs";
-import { platform } from "node:os";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { homedir, platform } from "node:os";
 import { execCapture } from "../utils/process.js";
 
 const PEM_BEGIN = "-----BEGIN CERTIFICATE-----";
 const PEM_END = "-----END CERTIFICATE-----";
+
+export interface KeychainCert {
+  label: string;
+  pem: string;
+}
 
 /**
  * Extract individual PEM certificate blocks from a string.
@@ -27,35 +33,78 @@ function parsePemBlocks(pem: string): string[] {
 }
 
 /**
- * Detect CA certificates from macOS System Keychain.
- * Returns PEM-encoded certificates (empty string if none found or not macOS).
- *
- * Lima caCerts는 VM trust store에 "추가"하는 것이지 대체가 아니므로,
- * 기존 CA와 중복 주입되어도 무해하다 (redundant일 뿐).
- * 사내 프록시 CA가 System Keychain에 설치된 경우 zero-config로 동작.
+ * Parse cert labels from `security find-certificate -a` output.
  */
-export function detectHostCACerts(): string {
-  if (platform() !== "darwin") return "";
+function parseLabels(output: string): string[] {
+  const labels: string[] = [];
+  for (const line of output.split("\n")) {
+    const match = line.match(/"labl"<blob>="(.+?)"/);
+    if (match) labels.push(match[1]);
+  }
+  return labels;
+}
+
+function isAppleDefault(label: string): boolean {
+  return label.startsWith("com.apple.") || label.includes("Apple");
+}
+
+/**
+ * List non-Apple certificates from macOS System Keychain.
+ * Returns empty array on non-macOS or if security command fails.
+ */
+export function listCustomKeychainCerts(): KeychainCert[] {
+  if (platform() !== "darwin") return [];
+
+  const KEYCHAIN = "/Library/Keychains/System.keychain";
 
   try {
-    const result = execCapture("security", [
-      "find-certificate", "-a", "-p",
-      "/Library/Keychains/System.keychain",
-    ]);
-    if (result.status !== 0 || !result.stdout.trim()) return "";
-    return result.stdout;
+    // Get labels (ordered)
+    const metaResult = execCapture("security", ["find-certificate", "-a", KEYCHAIN]);
+    if (metaResult.status !== 0) return [];
+
+    // Get PEMs (same order)
+    const pemResult = execCapture("security", ["find-certificate", "-a", "-p", KEYCHAIN]);
+    if (pemResult.status !== 0) return [];
+
+    const labels = parseLabels(metaResult.stdout);
+    const pems = parsePemBlocks(pemResult.stdout);
+
+    if (labels.length !== pems.length) return [];
+
+    return labels
+      .map((label, i) => ({ label, pem: pems[i] }))
+      .filter((c) => !isAppleDefault(c.label));
   } catch {
-    return "";
+    return [];
   }
 }
 
 /**
- * Collect CA certificates from all sources, deduplicate, and return as a single PEM string.
+ * Save selected certs to a PEM file and return the file path.
+ */
+export function saveCertFile(certs: KeychainCert[], isGlobal: boolean, workspace?: string): string {
+  let certPath: string;
+
+  if (isGlobal) {
+    const dir = join(homedir(), ".config", "agentbox");
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    certPath = join(dir, "ca-certificates.pem");
+  } else {
+    if (!workspace) throw new Error("workspace is required for local cert file");
+    certPath = join(workspace, "agentbox-ca.pem");
+  }
+
+  const content = certs.map((c) => c.pem).join("\n") + "\n";
+  writeFileSync(certPath, content, "utf-8");
+  return certPath;
+}
+
+/**
+ * Collect CA certificates from explicit sources, deduplicate, and return as a single PEM string.
  *
  * Sources (in order):
  * 1. User-specified PEM file path (from config `caCert`)
  * 2. NODE_EXTRA_CA_CERTS environment variable
- * 3. macOS System Keychain auto-detect (zero-config 프록시 CA 지원)
  */
 export function collectCACerts(configCertPath?: string): string {
   const allBlocks: string[] = [];
@@ -79,12 +128,6 @@ export function collectCACerts(configCertPath?: string): string {
     } catch {
       // skip
     }
-  }
-
-  // 3. macOS System Keychain auto-detect
-  const hostCerts = detectHostCACerts();
-  if (hostCerts) {
-    allBlocks.push(...parsePemBlocks(hostCerts));
   }
 
   if (allBlocks.length === 0) return "";
