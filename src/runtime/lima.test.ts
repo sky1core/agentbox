@@ -1,5 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
-import { buildTemplate } from "./lima.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("../utils/process.js", () => ({
+  execInherit: vi.fn().mockReturnValue(0),
+  execCapture: vi.fn().mockReturnValue({ status: 0, stdout: "", stderr: "" }),
+}));
+
+import { buildTemplate, getState } from "./lima.js";
+import { execCapture } from "../utils/process.js";
 import type { ResolvedConfig } from "../config/schema.js";
 
 function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
@@ -21,6 +28,89 @@ function makeConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
     ...overrides,
   };
 }
+
+describe("getState", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("returns Running for a running VM", () => {
+    vi.mocked(execCapture).mockReturnValue({
+      status: 0,
+      stdout: JSON.stringify({ name: "test-vm", status: "Running" }) + "\n",
+      stderr: "",
+    });
+    expect(getState("test-vm")).toBe("Running");
+  });
+
+  it("returns Stopped for a stopped VM", () => {
+    vi.mocked(execCapture).mockReturnValue({
+      status: 0,
+      stdout: JSON.stringify({ name: "test-vm", status: "Stopped" }) + "\n",
+      stderr: "",
+    });
+    expect(getState("test-vm")).toBe("Stopped");
+  });
+
+  it("returns Broken for a broken VM", () => {
+    vi.mocked(execCapture).mockReturnValue({
+      status: 0,
+      stdout: JSON.stringify({ name: "test-vm", status: "Broken" }) + "\n",
+      stderr: "",
+    });
+    expect(getState("test-vm")).toBe("Broken");
+  });
+
+  it("returns empty string when limactl fails", () => {
+    vi.mocked(execCapture).mockReturnValue({
+      status: 1,
+      stdout: "",
+      stderr: "error",
+    });
+    expect(getState("test-vm")).toBe("");
+  });
+
+  it("returns empty string when VM name not found", () => {
+    vi.mocked(execCapture).mockReturnValue({
+      status: 0,
+      stdout: JSON.stringify({ name: "other-vm", status: "Running" }) + "\n",
+      stderr: "",
+    });
+    expect(getState("test-vm")).toBe("");
+  });
+
+  it("returns empty string for unknown status", () => {
+    vi.mocked(execCapture).mockReturnValue({
+      status: 0,
+      stdout: JSON.stringify({ name: "test-vm", status: "Installing" }) + "\n",
+      stderr: "",
+    });
+    expect(getState("test-vm")).toBe("");
+  });
+
+  it("handles JSON Lines with multiple entries", () => {
+    const lines = [
+      JSON.stringify({ name: "other-vm", status: "Stopped" }),
+      JSON.stringify({ name: "test-vm", status: "Running" }),
+    ].join("\n") + "\n";
+    vi.mocked(execCapture).mockReturnValue({ status: 0, stdout: lines, stderr: "" });
+    expect(getState("test-vm")).toBe("Running");
+  });
+
+  it("skips invalid JSON lines gracefully", () => {
+    const lines = [
+      "not valid json",
+      JSON.stringify({ name: "test-vm", status: "Running" }),
+    ].join("\n") + "\n";
+    vi.mocked(execCapture).mockReturnValue({ status: 0, stdout: lines, stderr: "" });
+    expect(getState("test-vm")).toBe("Running");
+  });
+
+  it("returns empty string for empty stdout", () => {
+    vi.mocked(execCapture).mockReturnValue({ status: 0, stdout: "", stderr: "" });
+    expect(getState("test-vm")).toBe("");
+  });
+});
 
 describe("buildTemplate", () => {
   it("generates valid YAML with workspace mount", () => {

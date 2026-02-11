@@ -6,6 +6,7 @@ vi.mock("../runtime/certs.js", () => ({
 }));
 
 import { resolveConfig } from "./loader.js";
+import { collectCACerts } from "../runtime/certs.js";
 import type { GlobalConfig, LocalConfig } from "./schema.js";
 
 describe("resolveConfig", () => {
@@ -182,5 +183,28 @@ describe("resolveConfig", () => {
     };
     const config = resolveConfig("codex", local, global);
     expect(config.agent.model).toBe("o4-mini");
+  });
+
+  it("injects NODE_EXTRA_CA_CERTS when caCerts is non-empty", () => {
+    vi.mocked(collectCACerts).mockReturnValue("-----BEGIN CERTIFICATE-----\nAAA=\n-----END CERTIFICATE-----");
+    const config = resolveConfig("codex", minimalLocal, {});
+    expect(config.env.NODE_EXTRA_CA_CERTS).toBe("/etc/ssl/certs/ca-certificates.crt");
+    vi.mocked(collectCACerts).mockReturnValue("");
+  });
+
+  it("does not inject NODE_EXTRA_CA_CERTS when caCerts is empty", () => {
+    vi.mocked(collectCACerts).mockReturnValue("");
+    const config = resolveConfig("codex", minimalLocal, {});
+    expect(config.env.NODE_EXTRA_CA_CERTS).toBeUndefined();
+  });
+
+  it("does not override existing NODE_EXTRA_CA_CERTS from user env", () => {
+    vi.mocked(collectCACerts).mockReturnValue("-----BEGIN CERTIFICATE-----\nAAA=\n-----END CERTIFICATE-----");
+    const global: GlobalConfig = {
+      env: { NODE_EXTRA_CA_CERTS: "/custom/path/ca.pem" },
+    };
+    const config = resolveConfig("codex", minimalLocal, global);
+    expect(config.env.NODE_EXTRA_CA_CERTS).toBe("/custom/path/ca.pem");
+    vi.mocked(collectCACerts).mockReturnValue("");
   });
 });
